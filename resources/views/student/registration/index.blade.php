@@ -1,0 +1,129 @@
+@extends('components.student-app-layout')
+
+@section('header')
+    <div class="bg-white rounded-2xl p-6 mb-6 shadow-sm border border-gray-100">
+        <h2 class="text-2xl font-bold text-gray-800">Subject Registration</h2>
+        <p class="text-gray-500 mt-1">
+            @if($currentSemester)
+                {{ $currentSemester->name }} &bull; {{ $currentSemester->academicYear->name ?? '' }}
+            @else
+                No active semester
+            @endif
+        </p>
+    </div>
+@endsection
+
+@section('content')
+<div class="max-w-7xl mx-auto space-y-6">
+
+    
+
+    @if(!$currentSemester)
+        <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 rounded">
+            There is no current semester set up yet. Please check back once the school opens a semester.
+        </div>
+    @else
+        <!-- Biometric Status -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Biometric Check-In</h3>
+            <div class="flex items-center gap-4">
+                @if($isBiometricVerified)
+                    <span class="px-3 py-1 inline-flex items-center gap-2 text-sm font-semibold rounded-full bg-green-100 text-green-800">
+                        <i class="fas fa-fingerprint"></i> Verified
+                    </span>
+                    <p class="text-sm text-gray-500">You have completed biometric check-in for this semester.</p>
+                @else
+                    <span class="px-3 py-1 inline-flex items-center gap-2 text-sm font-semibold rounded-full bg-red-100 text-red-800">
+                        <i class="fas fa-fingerprint"></i> Not Done
+                    </span>
+                    <p class="text-sm text-gray-500">
+                        @if($currentSemester->biometric_window_open)
+                            Please visit the biometric station on campus to confirm your presence for this semester.
+                        @else
+                            The biometric check-in window has not been opened yet.
+                        @endif
+                    </p>
+                @endif
+            </div>
+        </div>
+
+       
+
+        @if(!$currentSemester->isRegistrationOpen())
+            <div class="p-4 bg-gray-100 border-l-4 border-gray-400 text-gray-700 rounded">
+                Subject registration is currently closed for this semester.
+            </div>
+        @elseif(!$isBiometricVerified)
+            <div class="p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded">
+                You must complete biometric check-in on campus before you can register subjects this semester.
+            </div>
+        @elseif(!$meetsThreshold)
+            <div class="p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded">
+                <p>You have not paid enough of your fees to register subjects this semester.</p>
+                <p class="mt-1">
+                    Your Total Balance Due is <span class="font-semibold">{{ number_format($balanceDue, 2) }}</span>,
+                    but it must be <span class="font-semibold">{{ number_format($maxAllowedBalance, 2) }}</span> or less
+                    (i.e. at least <span class="font-semibold">{{ rtrim(rtrim(number_format($currentSemester->required_payment_percentage ?? 0, 2), '0'), '.') }}%</span>
+                    of this year's <span class="font-semibold">{{ number_format($feeStructure ? $student->tuitionFeeAmount($currentSemester->academicYear) : 0, 2) }}</span> bill paid or credited)
+                    before you can register.
+                </p>
+                <p class="mt-1">Please clear the balance (or enough of it) and check back.</p>
+            </div>
+        @else
+            <div class="flex justify-end">
+                <a href="{{ route('student.registration.create') }}" class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                    <i class="fas fa-{{ $registrations->isNotEmpty() ? 'pen' : 'plus' }}"></i> {{ $registrations->isNotEmpty() ? 'Edit Registration' : 'Register Subjects' }}
+                </a>
+            </div>
+        @endif
+
+        <!-- Registered Subjects -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-800">Registered Subjects</h3>
+                @if($registrations->isNotEmpty())
+                    <a href="{{ route('student.registration.print') }}" target="_blank" class="text-sm text-primary-600 hover:underline">
+                        <i class="fas fa-print"></i> Print Registration Slip
+                    </a>
+                @endif
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Hours</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        @forelse($registrations as $registration)
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $registration->subject->code ?? 'N/A' }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $registration->subject->title ?? 'N/A' }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $registration->subject->credit_hours ?? '-' }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    @if($currentSemester->isRegistrationOpen())
+                                        <form action="{{ route('student.registration.destroy', $registration) }}" method="POST" class="inline-block">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="text-red-600 hover:text-red-900" onclick="return confirm('Drop this subject?')">
+                                                <i class="fas fa-trash"></i> Drop
+                                            </button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="4" class="px-6 py-8 text-center text-gray-400">No subjects registered yet for this semester.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+</div>
+@endsection

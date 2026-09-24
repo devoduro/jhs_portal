@@ -1,0 +1,161 @@
+<x-app-layout>
+    <x-slot name="header">
+        <div class="flex justify-between items-center">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                {{ __('Timetable') }}
+            </h2>
+            <x-button href="{{ route('timetable.create') }}" icon="fas fa-plus">
+                {{ __('Add Timetable Entry') }}
+            </x-button>
+        </div>
+    </x-slot>
+
+    <div class="py-12">
+        <div class="max-w-[1600px] mx-auto sm:px-6 lg:px-8">
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6 bg-white border-b border-gray-200">
+                    <form method="GET" action="{{ route('timetable.index') }}" class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+                        <div>
+                            <select name="class_group_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                                <option value="">All Classes</option>
+                                @foreach($classGroups as $classGroup)
+                                    <option value="{{ $classGroup->id }}" {{ request('class_group_id') == $classGroup->id ? 'selected' : '' }}>{{ $classGroup->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <select name="teacher_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                                <option value="">All Teachers</option>
+                                @foreach($teachers as $teacher)
+                                    <option value="{{ $teacher->id }}" {{ request('teacher_id') == $teacher->id ? 'selected' : '' }}>{{ $teacher->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <select name="department_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                                <option value="">All Departments</option>
+                                @foreach($departments as $department)
+                                    <option value="{{ $department->id }}" {{ request('department_id') == $department->id ? 'selected' : '' }}>{{ $department->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <select name="level" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                                <option value="">All Forms</option>
+                                @foreach(\App\Support\FormLabel::OPTIONS as $levelOption => $levelLabel)
+                                    <option value="{{ $levelOption }}" {{ (string) request('level') === (string) $levelOption ? 'selected' : '' }}>{{ $levelLabel }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <select name="semester_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                                <option value="">All Semesters</option>
+                                @foreach($semesters as $semester)
+                                    <option value="{{ $semester->id }}" {{ request('semester_id') == $semester->id ? 'selected' : '' }}>{{ $semester->name }} - {{ $semester->academicYear->name ?? '' }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="submit" class="flex-1 bg-primary-600 text-white rounded-md px-4 py-2 text-sm hover:bg-primary-700">
+                                <i class="fas fa-filter mr-1"></i> Filter
+                            </button>
+                            @if($showGrid)
+                                <a href="{{ route('timetable.print', request()->only(['class_group_id', 'teacher_id', 'department_id', 'semester_id', 'level'])) }}" target="_blank" class="flex-1 text-center bg-gray-800 text-white rounded-md px-4 py-2 text-sm hover:bg-gray-900">
+                                    <i class="fas fa-print mr-1"></i> Print
+                                </a>
+                            @endif
+                        </div>
+                    </form>
+
+                    @if($showGrid)
+                        @if($workload)
+                            <div class="mb-4 flex flex-wrap gap-3">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary-50 text-primary-700">
+                                    <i class="fas fa-chalkboard-teacher"></i> {{ $workload['classes'] }} class{{ $workload['classes'] === 1 ? '' : 'es' }}
+                                </span>
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700">
+                                    <i class="fas fa-weight-hanging"></i> Weekly Load: {{ rtrim(rtrim(number_format($workload['workload'], 2), '0'), '.') }} periods
+                                </span>
+                            </div>
+                        @endif
+                        @if($classSummary)
+                            <div class="mb-4 flex flex-wrap gap-3">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-700">
+                                    <i class="fas fa-book"></i> Total Subjects: {{ $classSummary['subjects'] }}
+                                </span>
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700">
+                                    <i class="fas fa-award"></i> Total Periods/Week: {{ rtrim(rtrim(number_format($classSummary['credit'], 2), '0'), '.') }}
+                                </span>
+                            </div>
+                        @endif
+                        @include('timetable._grid', ['entries' => $entries, 'slotLabels' => $slotLabels, 'showActions' => true])
+                    @else
+                        <div class="p-4 mb-4 bg-blue-50 border-l-4 border-blue-400 text-blue-700 text-sm rounded">
+                            Select a class, teacher or department, plus a semester, above to see the colour-coded weekly timetable grid (and print it). Showing a flat list for now.
+                        </div>
+
+                        @if($paginatedEntries->isEmpty())
+                            <div class="text-center py-8 text-gray-400">
+                                No timetable entries found.
+                            </div>
+                        @else
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Day</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teacher</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venue</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
+                                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        @foreach($paginatedEntries as $entry)
+                                            <tr>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ \App\Http\Controllers\TimetableController::DAYS[$entry->day_of_week] ?? '-' }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ substr($entry->start_time, 0, 5) }} - {{ substr($entry->end_time, 0, 5) }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $entry->classGroup->name ?? 'N/A' }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $entry->subject->code ?? 'N/A' }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $entry->teacher->name ?? 'Unassigned' }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    @if($entry->is_virtual)
+                                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><i class="fas fa-laptop"></i> Online</span>
+                                                    @else
+                                                        {{ $entry->venue->name ?? 'N/A' }}
+                                                    @endif
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $entry->semester->name ?? 'N/A' }}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                    <div class="flex justify-end space-x-2">
+                                                        <a href="{{ route('timetable.edit', $entry) }}" class="text-indigo-600 hover:text-indigo-900">
+                                                            <i class="fas fa-edit"></i>
+                                                        </a>
+                                                        <form action="{{ route('timetable.destroy', $entry) }}" method="POST" class="inline-block">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="text-red-600 hover:text-red-900" onclick="return confirm('Delete this timetable entry?')">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="mt-4">
+                                {{ $paginatedEntries->links() }}
+                            </div>
+                        @endif
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+</x-app-layout>
