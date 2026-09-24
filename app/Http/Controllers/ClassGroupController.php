@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Exports\ClassListTemplateExport;
 use App\Imports\ClassListImport;
 use App\Models\ClassGroup;
-use App\Models\Programme;
+use App\Models\Teacher;
 use App\Models\Semester;
 use App\Models\Student;
 use Illuminate\Http\Request;
@@ -19,9 +19,8 @@ class ClassGroupController extends Controller
      */
     public function index()
     {
-        $classGroups = ClassGroup::with('programme')
-            ->withCount('students')
-            ->orderBy('programme_id')
+        $classGroups = ClassGroup::with('classTeacher')
+            ->withCount(['students' => fn ($q) => $q->where('status', 'active')])
             ->orderBy('level')
             ->orderBy('name')
             ->paginate(20);
@@ -36,9 +35,9 @@ class ClassGroupController extends Controller
      */
     public function create()
     {
-        $programmes = Programme::orderBy('name')->get();
+        $teachers = Teacher::orderBy('name')->get();
 
-        return view('class-groups.create', compact('programmes'));
+        return view('class-groups.create', compact('teachers'));
     }
 
     /**
@@ -47,9 +46,9 @@ class ClassGroupController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'programme_id' => 'required|exists:programmes,id',
-            'level' => 'required|integer|min:100|max:800',
-            'name' => 'required|string|max:255',
+            'level' => 'required|integer|' . \App\Support\FormLabel::rule(),
+            'name' => 'required|string|max:255|unique:class_groups,name' . (isset($classGroup) ? ',' . $classGroup->id : ''),
+            'class_teacher_id' => 'nullable|exists:teachers,id',
         ]);
 
         if ($validator->fails()) {
@@ -58,7 +57,7 @@ class ClassGroupController extends Controller
                 ->withInput();
         }
 
-        ClassGroup::create($request->only(['programme_id', 'level', 'name']));
+        ClassGroup::create($request->only(['level', 'name', 'class_teacher_id']));
 
         return redirect()->route('class-groups.index')
             ->with('success', 'Class created successfully.');
@@ -69,9 +68,9 @@ class ClassGroupController extends Controller
      */
     public function edit(ClassGroup $classGroup)
     {
-        $programmes = Programme::orderBy('name')->get();
+        $teachers = Teacher::orderBy('name')->get();
 
-        return view('class-groups.edit', compact('classGroup', 'programmes'));
+        return view('class-groups.edit', compact('classGroup', 'teachers'));
     }
 
     /**
@@ -80,9 +79,9 @@ class ClassGroupController extends Controller
     public function update(Request $request, ClassGroup $classGroup)
     {
         $validator = Validator::make($request->all(), [
-            'programme_id' => 'required|exists:programmes,id',
-            'level' => 'required|integer|min:100|max:800',
-            'name' => 'required|string|max:255',
+            'level' => 'required|integer|' . \App\Support\FormLabel::rule(),
+            'name' => 'required|string|max:255|unique:class_groups,name' . (isset($classGroup) ? ',' . $classGroup->id : ''),
+            'class_teacher_id' => 'nullable|exists:teachers,id',
         ]);
 
         if ($validator->fails()) {
@@ -91,7 +90,10 @@ class ClassGroupController extends Controller
                 ->withInput();
         }
 
-        $classGroup->update($request->only(['programme_id', 'level', 'name']));
+        $classGroup->update($request->only(['level', 'name', 'class_teacher_id']));
+
+        // Pupils follow their class's level.
+        $classGroup->students()->update(['level' => $classGroup->level]);
 
         return redirect()->route('class-groups.index')
             ->with('success', 'Class updated successfully.');
@@ -118,8 +120,9 @@ class ClassGroupController extends Controller
      */
     public function assignStudentsForm(ClassGroup $classGroup)
     {
-        $students = Student::where('programme_id', $classGroup->programme_id)
-            ->where('level', $classGroup->level)
+        $students = Student::where('status', 'active')
+            ->where(fn ($q) => $q->where('level', $classGroup->level)->orWhere('class_group_id', $classGroup->id))
+            ->with('classGroup')
             ->orderBy('full_name')
             ->get();
 
@@ -150,13 +153,11 @@ class ClassGroupController extends Controller
             ->update(['class_group_id' => null]);
 
         // Assign the selected students to this class group.
-        Student::where('programme_id', $classGroup->programme_id)
-            ->where('level', $classGroup->level)
-            ->whereIn('id', $selectedIds)
-            ->update(['class_group_id' => $classGroup->id]);
+        Student::whereIn('id', $selectedIds)
+            ->update(['class_group_id' => $classGroup->id, 'level' => $classGroup->level]);
 
         return redirect()->route('class-groups.index')
-            ->with('success', 'Students assigned to ' . $classGroup->name . ' successfully.');
+            ->with('success', 'Pupils placed in ' . $classGroup->name . '.');
     }
 
     /**
@@ -218,7 +219,7 @@ class ClassGroupController extends Controller
      */
     public function print(ClassGroup $classGroup)
     {
-        $classGroup->load('programme');
+        $classGroup->load('classTeacher');
 
         $students = Student::where('class_group_id', $classGroup->id)
             ->orderBy('full_name')

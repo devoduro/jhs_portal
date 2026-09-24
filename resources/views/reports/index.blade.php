@@ -1,214 +1,84 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Reports') }}
-            </h2>
-        </div>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ __('Performance Reports') }}</h2>
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <!-- Report Types -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-                <!-- Grade Distribution -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-blue-100 mr-4">
-                                <i class="fas fa-chart-bar text-blue-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Grade Distribution</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">View WASSCE aggregate/division distribution across programmes or academic years.</p>
-                        <a href="{{ route('reports.grade-distribution') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
+    <div class="py-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+            <form method="GET" action="{{ route('reports.index') }}" class="bg-white shadow-sm rounded-lg p-4 flex items-end gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Term</label>
+                    <select name="semester_id" onchange="this.form.submit()" class="rounded-lg border-gray-300 text-sm">
+                        @foreach($terms as $t)
+                            <option value="{{ $t->id }}" @selected($term && $term->id === $t->id)>{{ $t->full_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </form>
+
+            @if($classes->isNotEmpty())
+                <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                    <h3 class="px-6 py-4 border-b font-semibold text-gray-900">Class summary — {{ $term->full_name }}</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
+                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pupils scored</th>
+                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Class average</th>
+                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Averaging 50%+</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Top pupils</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Best / weakest subject</th>
+                                    <th class="px-4 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @foreach($classes as $row)
+                                    <tr class="align-top">
+                                        <td class="px-4 py-3 font-medium">{{ $row['class']->name }}<div class="text-xs text-gray-500">{{ $row['class']->classTeacher->name ?? '' }}</div></td>
+                                        <td class="px-4 py-3 text-right">{{ $row['scored'] }} / {{ $row['roll'] }}</td>
+                                        <td class="px-4 py-3 text-right font-semibold">{{ $row['average'] !== null ? $row['average'] . '%' : '—' }}</td>
+                                        <td class="px-4 py-3 text-right">{{ $row['passRate'] !== null ? $row['passRate'] . '%' : '—' }}</td>
+                                        <td class="px-4 py-3">
+                                            @foreach($row['top'] as $p)
+                                                <div>{{ \App\Services\TerminalReportService::ordinal($p['position']) }} {{ $p['student']->full_name }} <span class="text-xs text-gray-500">({{ $p['average'] }}%)</span></div>
+                                            @endforeach
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            @if($row['subjects']->isNotEmpty())
+                                                <div class="text-green-700">{{ $row['subjects']->first()['subject']->title }} ({{ $row['subjects']->first()['average'] }})</div>
+                                                <div class="text-red-700">{{ $row['subjects']->last()['subject']->title }} ({{ $row['subjects']->last()['average'] }})</div>
+                                            @endif
+                                        </td>
+                                        <td class="px-4 py-3 text-right">
+                                            <a href="{{ route('scores.broadsheet', ['classGroup' => $row['class'], 'semester_id' => $term->id]) }}" class="text-primary-600 hover:underline text-xs">Broadsheet</a>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
-                <!-- Subject Performance -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-green-100 mr-4">
-                                <i class="fas fa-book text-green-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Subject Performance</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    @foreach($classes->filter(fn ($c) => $c['subjects']->isNotEmpty()) as $row)
+                        <div class="bg-white shadow-sm rounded-lg p-5">
+                            <h4 class="font-semibold text-gray-900 mb-3">{{ $row['class']->name }} — subject averages</h4>
+                            @foreach($row['subjects'] as $s)
+                                <div class="flex items-center gap-2 text-sm mb-1">
+                                    <span class="w-44 truncate text-gray-700" title="{{ $s['subject']->title }}">{{ $s['subject']->title }}</span>
+                                    <div class="flex-1 h-3 bg-gray-100 rounded">
+                                        <div class="h-3 rounded {{ $s['average'] >= 70 ? 'bg-green-500' : ($s['average'] >= 50 ? 'bg-primary-500' : 'bg-red-400') }}" style="width: {{ min(100, $s['average']) }}%"></div>
+                                    </div>
+                                    <span class="w-10 text-right text-gray-600">{{ $s['average'] }}</span>
+                                </div>
+                            @endforeach
                         </div>
-                        <p class="text-gray-600 mb-4">Analyze student performance across different subjects.</p>
-                        <a href="{{ route('reports.subject-performance') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
+                    @endforeach
                 </div>
-                
-                <!-- Student Performance -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-purple-100 mr-4">
-                                <i class="fas fa-user-graduate text-purple-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Student Performance</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">Track individual student performance over time.</p>
-                        <a href="{{ route('reports.student-performance') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-                
-                <!-- Programme Statistics -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-yellow-100 mr-4">
-                                <i class="fas fa-graduation-cap text-yellow-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Programme Statistics</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">Compare performance metrics across different programmes.</p>
-                        <a href="{{ route('reports.programme-statistics') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-                
-                <!-- Aggregate Distribution -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-red-100 mr-4">
-                                <i class="fas fa-award text-red-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Aggregate Distribution</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">View WASSCE division distribution across programmes.</p>
-                        <a href="{{ route('reports.aggregate-distribution') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-                
-                <!-- Semester Comparison -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-indigo-100 mr-4">
-                                <i class="fas fa-chart-line text-indigo-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Semester Comparison</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">Compare performance metrics across different semesters.</p>
-                        <a href="{{ route('reports.semester-comparison') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-
-                @can('manage-biometric')
-                <!-- Campus Attendance -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-emerald-100 mr-4">
-                                <i class="fas fa-fingerprint text-emerald-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Campus Attendance</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">Gate clock-in/clock-out register by house, student, status and date range.</p>
-                        <a href="{{ route('campus-attendance.index') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-                @endcan
-
-                @can('manage-houses')
-                <!-- Exeats -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-orange-100 mr-4">
-                                <i class="fas fa-door-open text-orange-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Exeats</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">All boarder exeats granted, filterable by house, status and date range.</p>
-                        <a href="{{ route('exeats.index') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-                @endcan
-
-                @can('send-sms')
-                <!-- Parent Notifications -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6 border-b border-gray-200">
-                        <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-teal-100 mr-4">
-                                <i class="fas fa-sms text-teal-600 text-xl"></i>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900">Parent Notifications</h3>
-                        </div>
-                        <p class="text-gray-600 mb-4">Every exeat and campus check-in SMS sent to parents/guardians.</p>
-                        <a href="{{ route('sms.parent-notifications') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                            View Report
-                        </a>
-                    </div>
-                </div>
-                @endcan
-            </div>
-            
-            <!-- Export Options -->
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">Export Reports</h3>
-                    
-                    <form action="{{ route('reports.export-excel') }}" method="GET" class="space-y-4">
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label for="report_type" class="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
-                                <select id="report_type" name="report_type" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md">
-                                    <option value="grade_distribution">Grade Distribution</option>
-                                    <option value="subject_performance">Subject Performance</option>
-                                    <option value="student_performance">Student Performance</option>
-                                    <option value="programme_statistics">Programme Statistics</option>
-                                    <option value="aggregate_distribution">Aggregate Distribution</option>
-                                    <option value="semester_comparison">Semester Comparison</option>
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label for="academic_year_id" class="block text-sm font-medium text-gray-700 mb-1">Academic Year</label>
-                                <select id="academic_year_id" name="academic_year_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md">
-                                    <option value="">All Academic Years</option>
-                                    @foreach($academicYears ?? [] as $year)
-                                        <option value="{{ $year->id }}">{{ $year->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label for="format" class="block text-sm font-medium text-gray-700 mb-1">Format</label>
-                                <select id="format" name="format" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md">
-                                    <option value="excel">Excel</option>
-                                    <option value="pdf">PDF</option>
-                                    <option value="csv">CSV</option>
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <div class="flex justify-end">
-                            <button type="submit" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
-                                <i class="fas fa-download mr-2"></i> Export Report
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+            @else
+                <div class="bg-white shadow-sm rounded-lg p-10 text-center text-gray-400">No classes or scores yet for this term.</div>
+            @endif
         </div>
     </div>
 </x-app-layout>

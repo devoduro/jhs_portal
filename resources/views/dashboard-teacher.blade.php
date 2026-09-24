@@ -1,158 +1,71 @@
 @extends('components.app-layout')
 
 @section('title', 'Dashboard')
-@section('subtitle', 'Your subjects, classes and students')
+@section('subtitle', $term ? $term->full_name : 'Your classes and subjects')
 
 @section('content')
-<div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-    <!-- Welcome Banner -->
-    <div class="col-span-1 md:col-span-4">
-        <div class="gradient-bg rounded-lg shadow-lg p-6 text-white">
-            <h2 class="text-2xl font-bold mb-2">Welcome back!</h2>
-            <p class="opacity-90">Here's an overview of the subjects and classes assigned to you.</p>
-        </div>
+<div class="space-y-6">
+    <div class="gradient-bg rounded-lg shadow-lg p-6 text-white">
+        <h2 class="text-2xl font-bold mb-1">Welcome, {{ auth()->user()->name }}</h2>
+        <p class="opacity-90">Enter your pupils' scores and remarks here. They go straight onto the terminal reports.</p>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="bg-green-500 rounded-2xl shadow-lg p-6 flex items-center justify-between">
-        <div>
-            <div class="text-4xl font-bold text-white">{{ $subjects->count() }}</div>
-            <div class="text-white text-opacity-90 font-medium mt-1">My Subjects</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white rounded-lg shadow p-5">
+            <p class="text-sm text-gray-500">Classes I'm in charge of</p>
+            <p class="text-3xl font-bold">{{ $classCards->count() }}</p>
         </div>
-        <div class="w-14 h-14 rounded-full bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
-            <i class="fas fa-book text-2xl text-white"></i>
+        <div class="bg-white rounded-lg shadow p-5">
+            <p class="text-sm text-gray-500">Subjects I teach</p>
+            <p class="text-3xl font-bold">{{ $subjects->count() }}</p>
         </div>
+        <a href="{{ route('assignments.index') }}" class="bg-white rounded-lg shadow p-5 hover:shadow-md">
+            <p class="text-sm text-gray-500">Assignments waiting to be marked</p>
+            <p class="text-3xl font-bold">{{ $pendingGradingCount }}</p>
+            <p class="text-xs text-gray-500">{{ $activeAssignmentsCount }} active assignments · {{ $activeQuizzesCount }} quizzes</p>
+        </a>
     </div>
 
-    <div class="bg-orange-500 rounded-2xl shadow-lg p-6 flex items-center justify-between">
-        <div>
-            <div class="text-4xl font-bold text-white">{{ $classGroups->count() }}</div>
-            <div class="text-white text-opacity-90 font-medium mt-1">My Classes</div>
-        </div>
-        <div class="w-14 h-14 rounded-full bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
-            <i class="fas fa-users text-2xl text-white"></i>
-        </div>
-    </div>
-
-    <div class="bg-red-500 rounded-2xl shadow-lg p-6 flex items-center justify-between">
-        <div>
-            <div class="text-4xl font-bold text-white">{{ $studentCount }}</div>
-            <div class="text-white text-opacity-90 font-medium mt-1">My Students</div>
-        </div>
-        <div class="w-14 h-14 rounded-full bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
-            <i class="fas fa-user-graduate text-2xl text-white"></i>
-        </div>
-    </div>
-
-    <div class="bg-blue-500 rounded-2xl shadow-lg p-6 flex items-center justify-between">
-        <div>
-            <div class="text-4xl font-bold text-white">{{ rtrim(rtrim(number_format($workload['workload'], 2), '0'), '.') }}</div>
-            <div class="text-white text-opacity-90 font-medium mt-1">My Workload</div>
-            <div class="text-xs text-white text-opacity-80 mt-0.5">{{ $workload['classes'] }} class{{ $workload['classes'] === 1 ? '' : 'es' }}{{ $currentSemester ? ' this semester' : '' }}</div>
-        </div>
-        <div class="w-14 h-14 rounded-full bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0">
-            <i class="fas fa-weight-hanging text-2xl text-white"></i>
-        </div>
-    </div>
-
-    <!-- Pending Grading -->
-    <a href="{{ route('assignments.index') }}" class="col-span-1 md:col-span-4 bg-white rounded-lg shadow-lg overflow-hidden block hover:shadow-xl transition-shadow">
-        <div class="p-6 flex items-center justify-between">
-            <div class="flex items-center gap-4">
-                <div class="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
-                    <i class="fas fa-list-check text-2xl text-rose-600"></i>
-                </div>
-                <div>
-                    <div class="text-2xl font-bold text-gray-800">{{ $pendingGradingCount }}</div>
-                    <div class="text-gray-500 font-medium">Submission{{ $pendingGradingCount === 1 ? '' : 's' }} awaiting grading</div>
-                </div>
-            </div>
-            <div class="flex gap-6 text-right">
-                <div>
-                    <div class="text-xl font-semibold text-gray-800">{{ $activeQuizzesCount }}</div>
-                    <div class="text-xs text-gray-500">Active Quizzes</div>
-                </div>
-                <div>
-                    <div class="text-xl font-semibold text-gray-800">{{ $activeAssignmentsCount }}</div>
-                    <div class="text-xs text-gray-500">Active Assignments</div>
-                </div>
-            </div>
-        </div>
-    </a>
-
-    <!-- Today's Classes -->
-    <div class="col-span-1 md:col-span-4 bg-white rounded-lg shadow-lg overflow-hidden">
-        <div class="p-6 border-b border-gray-100">
-            <div class="flex justify-between items-center">
-                <h3 class="text-lg font-bold text-gray-800">Today's Classes</h3>
-                <a href="{{ route('teacher.timetable') }}" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors">
-                    View Full Timetable
-                </a>
-            </div>
-        </div>
-        @if($todayEntries->isEmpty())
-            <div class="p-8 text-center text-gray-400">
-                No classes scheduled for today ({{ now()->format('l') }}).
-            </div>
-        @else
-            <div class="divide-y divide-gray-100">
-                @foreach($todayEntries as $entry)
-                    <div class="p-4 flex items-center justify-between">
-                        <div>
-                            <h4 class="font-semibold text-gray-800">{{ $entry->subject->code ?? 'N/A' }} &middot; {{ $entry->classGroup->name ?? 'N/A' }}</h4>
-                            <p class="text-sm text-gray-500">{{ $entry->subject->title ?? '' }}</p>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-sm font-semibold text-gray-800">{{ substr($entry->start_time, 0, 5) }} - {{ substr($entry->end_time, 0, 5) }}</div>
-                            <div class="text-sm text-gray-500 mt-1">
-                                @if($entry->is_virtual)
-                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><i class="fas fa-laptop"></i> Online</span>
-                                @else
-                                    {{ $entry->venue->name ?? 'N/A' }}
-                                @endif
+    @if($classCards->isNotEmpty())
+        <div class="bg-white rounded-lg shadow">
+            <h3 class="px-6 py-4 border-b font-semibold text-gray-900">My classes</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+                @foreach($classCards as $card)
+                    <div class="border rounded-lg p-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-semibold text-gray-900">{{ $card['class']->name }}</p>
+                                <p class="text-xs text-gray-500">{{ $card['roll'] }} pupils</p>
                             </div>
+                            <span class="text-xs px-2 py-1 rounded-full {{ $card['scores'] >= 100 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700' }}">Scores {{ $card['scores'] }}%</span>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-2 text-sm">
+                            <a href="{{ route('scores.index', ['class_group_id' => $card['class']->id]) }}" class="px-3 py-1 rounded bg-primary-600 text-white hover:bg-primary-700"><i class="fas fa-pen-alt mr-1"></i>Scores</a>
+                            <a href="{{ route('term-reports.index', ['class_group_id' => $card['class']->id]) }}" class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"><i class="fas fa-comment-dots mr-1"></i>Remarks</a>
+                            <a href="{{ route('scores.broadsheet', ['classGroup' => $card['class']]) }}" class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"><i class="fas fa-table mr-1"></i>Broadsheet</a>
                         </div>
                     </div>
                 @endforeach
             </div>
-        @endif
-    </div>
-
-    <!-- My Subjects -->
-    <div class="col-span-1 md:col-span-4 bg-white rounded-lg shadow-lg overflow-hidden">
-        <div class="p-6 border-b border-gray-100">
-            <h3 class="text-lg font-bold text-gray-800">My Subjects</h3>
         </div>
+    @endif
+
+    <div class="bg-white rounded-lg shadow">
+        <h3 class="px-6 py-4 border-b font-semibold text-gray-900">Subjects I teach</h3>
         @if($subjects->isEmpty())
-            <div class="p-8 text-center text-gray-400">
-                No subjects assigned to you yet.
-            </div>
+            <p class="px-6 py-6 text-gray-500 text-sm">You haven't been assigned any subjects yet.</p>
         @else
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
-                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        @foreach($subjects as $subject)
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $subject->code }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $subject->title }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $subject->semester->name ?? 'N/A' }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-                                    <a href="{{ route('continuous-assessment.show', $subject) }}" class="text-primary-600 hover:text-primary-900">CA Scores</a>
-                                    <a href="{{ route('results.filter.subject', ['subject_id' => $subject->id]) }}" class="text-indigo-600 hover:text-indigo-900">Results</a>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
+            <table class="min-w-full text-sm">
+                @foreach($subjects as $subject)
+                    <tr class="border-b border-gray-100">
+                        <td class="px-6 py-3 font-medium">{{ $subject->title }}</td>
+                        <td class="px-6 py-3 text-gray-500">{{ \App\Support\FormLabel::label($subject->level) }}</td>
+                        <td class="px-6 py-3 text-right">
+                            <a href="{{ route('scores.index') }}" class="text-primary-600 hover:underline">Enter scores</a>
+                        </td>
+                    </tr>
+                @endforeach
+            </table>
         @endif
     </div>
 </div>

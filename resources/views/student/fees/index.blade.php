@@ -13,23 +13,23 @@
     <!-- Balance Summary -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-            <p class="text-sm text-gray-500">Arrears (Previous Years)</p>
+            <p class="text-sm text-gray-500">Balance brought forward</p>
             <p class="text-xl font-semibold {{ $totalArrears > 0 ? 'text-red-600' : ($totalArrears < 0 ? 'text-green-600' : 'text-gray-900') }}">{{ number_format($totalArrears, 2) }}</p>
             @if($totalArrears < 0)
                 <p class="text-xs text-green-500">Credit - school owes you</p>
             @endif
         </div>
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-            <p class="text-sm text-gray-500">Current Academic Year Balance</p>
+            <p class="text-sm text-gray-500">{{ $term?->name ?? "This term" }} balance</p>
             <p class="text-xl font-semibold {{ $currentYearBalance > 0 ? 'text-red-600' : ($currentYearBalance < 0 ? 'text-green-600' : 'text-gray-900') }}">{{ number_format($currentYearBalance, 2) }}</p>
             @if($currentYearBalance < 0)
                 <p class="text-xs text-green-500">Credit - school owes you</p>
             @else
-                <p class="text-xs text-gray-400">Bill amount, plus/minus arrears, minus payments</p>
+                <p class="text-xs text-gray-400">This term's bill minus payments this term</p>
             @endif
         </div>
         <div class="bg-white rounded-2xl shadow-sm border-2 {{ $balanceDue > 0 ? 'border-red-300' : ($balanceDue < 0 ? 'border-green-300' : 'border-gray-100') }} p-4">
-            <p class="text-sm text-gray-500">Total Balance Due (Amount to pay)</p>
+            <p class="text-sm text-gray-500">Total amount owing (GH₵)</p>
             <p class="text-2xl font-bold {{ $balanceDue > 0 ? 'text-red-600' : 'text-green-600' }}">{{ number_format($balanceDue, 2) }}</p>
             @if($balanceDue < 0)
                 <p class="text-xs text-green-500">Credit - school owes you</p>
@@ -39,7 +39,7 @@
 
     @if($balanceDue > 0)
         <div class="p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded text-sm">
-            You have an outstanding balance of <span class="font-semibold">{{ number_format($balanceDue, 2) }}</span> — this is your arrears plus any unpaid tuition across all academic years shown in the statement below.
+            You have an outstanding balance of <span class="font-semibold">{{ number_format($balanceDue, 2) }}</span> — this includes any balance from earlier terms, shown in the statement below.
         </div>
     @elseif($balanceDue < 0)
         <div class="p-4 bg-green-50 border-l-4 border-green-400 text-green-700 rounded text-sm">
@@ -51,27 +51,27 @@
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="p-6 border-b border-gray-100">
             <h3 class="text-lg font-semibold text-gray-800">Fee Schedule</h3>
-            <p class="text-sm text-gray-500 mt-1">Your current fee for {{ $student->programme->name ?? 'your programme' }} — {{ $student->level ? \App\Support\FormLabel::label($student->level) : 'N/A' }}, current academic year.</p>
+            <p class="text-sm text-gray-500 mt-1">{{ $term?->full_name }} fees for {{ \App\Support\FormLabel::label($student->level) }}.</p>
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Academic Year</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Form</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Term</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     @forelse($schedule as $fee)
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $fee->academicYear->name ?? 'N/A' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $fee->level ? \App\Support\FormLabel::label($fee->level) : 'All Forms' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $fee->categoryLabel() }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $fee->semester?->name }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-gray-900">{{ number_format($fee->amount, 2) }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="3" class="px-6 py-8 text-center text-gray-400">No fee schedule has been published for your programme yet.</td>
+                            <td colspan="3" class="px-6 py-8 text-center text-gray-400">No fees have been published for your class this term yet.</td>
                         </tr>
                     @endforelse
                 </tbody>

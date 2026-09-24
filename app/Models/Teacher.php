@@ -59,6 +59,11 @@ class Teacher extends Model
      * Get the subjects this teacher is assigned to teach. A teacher can teach more than
      * one subject, and a subject can be co-taught by more than one teacher.
      */
+    public function classesInCharge(): HasMany
+    {
+        return $this->hasMany(ClassGroup::class, 'class_teacher_id');
+    }
+
     public function subjects(): BelongsToMany
     {
         return $this->belongsToMany(Subject::class, 'subject_teacher');

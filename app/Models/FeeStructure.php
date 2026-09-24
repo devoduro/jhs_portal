@@ -17,6 +17,7 @@ class FeeStructure extends Model
      */
     protected $fillable = [
         'academic_year_id',
+        'semester_id',
         'programme_id',
         'level',
         'category',
@@ -51,6 +52,11 @@ class FeeStructure extends Model
     /**
      * Get the programme this fee structure belongs to.
      */
+    public function semester(): BelongsTo
+    {
+        return $this->belongsTo(Semester::class);
+    }
+
     public function programme(): BelongsTo
     {
         return $this->belongsTo(Programme::class);

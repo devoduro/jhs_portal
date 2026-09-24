@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Assign Students') }} - {{ $classGroup->name }}
+                {{ __('Place Pupils') }} - {{ $classGroup->name }}
             </h2>
             <x-button href="{{ route('class-groups.index') }}" variant="secondary" icon="fas fa-arrow-left">
                 {{ __('Back to Classes') }}
@@ -15,12 +15,12 @@
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6 bg-white border-b border-gray-200">
                     <p class="text-sm text-gray-500 mb-4">
-                        Showing students in {{ $classGroup->programme->name ?? 'N/A' }}, {{ \App\Support\FormLabel::label($classGroup->level) }}. Check the students who belong to this class.
+                        Showing every {{ \App\Support\FormLabel::label($classGroup->level) }} pupil. Tick the pupils who belong to {{ $classGroup->name }}.
                     </p>
 
                     @if($students->isEmpty())
                         <div class="text-center py-8 text-gray-400">
-                            No students found for this programme and form.
+                            No {{ \App\Support\FormLabel::label($classGroup->level) }} pupils yet. Admit pupils first.
                         </div>
                     @else
                         <form method="POST" action="{{ route('class-groups.assign-students.store', $classGroup) }}">
@@ -31,7 +31,7 @@
                                     <thead class="bg-gray-50 sticky top-0">
                                         <tr>
                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Index Number</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Admission No.</th>
                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Class</th>
                                         </tr>
@@ -47,7 +47,7 @@
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $student->index_number }}</td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $student->full_name }}</td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {{ $student->class_group_id && $student->class_group_id != $classGroup->id ? 'Another class' : '-' }}
+                                                    {{ $student->class_group_id && $student->class_group_id != $classGroup->id ? $student->classGroup->name : '-' }}
                                                 </td>
                                             </tr>
                                         @endforeach
@@ -57,7 +57,7 @@
 
                             <div class="mt-6 flex justify-end">
                                 <x-button type="submit">
-                                    {{ __('Save Assignments') }}
+                                    {{ __('Save') }}
                                 </x-button>
                             </div>
                         </form>

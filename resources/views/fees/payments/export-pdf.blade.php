@@ -52,41 +52,47 @@
 </head>
 <body>
     <div class="header">
-        <h1>Student Fees</h1>
-        <p>Academic Year: {{ $academicYear->name ?? 'N/A' }} &bull; Generated on {{ now()->format('F d, Y') }}</p>
+        <h1>{{ \App\Models\Setting::get('institution_name', 'School') }} - Pupil Fees</h1>
+        <p>{{ $term?->full_name ?? '' }}{{ $classGroup ? ' • ' . $classGroup->name : '' }} &bull; Generated on {{ now()->format('d F Y') }}</p>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th>Index Number</th>
-                <th>Full Name</th>
-                <th>Programme</th>
-                <th>Form</th>
-                <th class="text-right">Arrears</th>
-                <th class="text-right">Fee Amount</th>
-                <th class="text-right">Paid</th>
-                <th class="text-right">Balance</th>
+                <th>#</th>
+                <th>Admission No.</th>
+                <th>Pupil</th>
+                <th>Class</th>
+                <th class="text-right">Bal. b/f</th>
+                <th class="text-right">Term Bill</th>
+                <th class="text-right">Paid (Term)</th>
+                <th class="text-right">Balance (GH¢)</th>
                 <th>Status</th>
-                <th class="text-right">% Paid</th>
             </tr>
         </thead>
         <tbody>
             @foreach($rows as $row)
                 @php $student = $row['student']; @endphp
                 <tr>
+                    <td>{{ $loop->iteration }}</td>
                     <td>{{ $student->index_number }}</td>
                     <td>{{ $student->full_name }}</td>
-                    <td>{{ $student->programme->name ?? 'N/A' }}</td>
-                    <td>{{ $student->level ? \App\Support\FormLabel::label($student->level) : '-' }}</td>
-                    <td class="text-right">{{ number_format($row['arrears'], 2) }}</td>
-                    <td class="text-right">{{ $row['fee_amount'] !== null ? number_format($row['fee_amount'], 2) : 'Not set' }}</td>
-                    <td class="text-right">{{ number_format($row['paid'], 2) }}</td>
+                    <td>{{ $student->classGroup->name ?? \App\Support\FormLabel::label($student->level) }}</td>
+                    <td class="text-right">{{ number_format($row['brought_forward'], 2) }}</td>
+                    <td class="text-right">{{ number_format($row['term_bill'], 2) }}</td>
+                    <td class="text-right">{{ number_format($row['term_paid'], 2) }}</td>
                     <td class="text-right {{ $row['status'] }}">{{ number_format($row['balance'], 2) }}</td>
-                    <td class="{{ $row['status'] }}">{{ ucfirst($row['status']) }}</td>
-                    <td class="text-right">{{ $row['percentage'] }}%</td>
+                    <td class="{{ $row['status'] }}">{{ ['debtor' => 'Owing', 'creditor' => 'In credit', 'settled' => 'Paid'][$row['status']] }}</td>
                 </tr>
             @endforeach
+            <tr>
+                <th colspan="4">Totals ({{ $rows->count() }} pupils)</th>
+                <th class="text-right">{{ number_format($rows->sum('brought_forward'), 2) }}</th>
+                <th class="text-right">{{ number_format($rows->sum('term_bill'), 2) }}</th>
+                <th class="text-right">{{ number_format($rows->sum('term_paid'), 2) }}</th>
+                <th class="text-right">{{ number_format($rows->sum('balance'), 2) }}</th>
+                <th></th>
+            </tr>
         </tbody>
     </table>
 </body>

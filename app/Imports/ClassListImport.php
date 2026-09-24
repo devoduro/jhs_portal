@@ -49,34 +49,21 @@ class ClassListImport implements ToCollection, WithHeadingRow, WithValidation, S
             $student = Student::where('index_number', $indexNumber)->first();
 
             if (!$student) {
-                $this->errors[] = "Student with index number {$indexNumber} not found.";
+                $this->errors[] = "Pupil with admission number {$indexNumber} not found.";
                 $this->skipped++;
                 continue;
             }
 
-            // An explicit level column is authoritative for this row: it lets a class-list
-            // upload also backfill/correct a student's level, rather than requiring it to
-            // already be set correctly before the class can be resolved.
-            $targetLevel = $level !== '' ? (int) $level : $student->level;
-
-            if ($targetLevel === null) {
-                $this->errors[] = "Student {$indexNumber} has no level on file and none was provided in the \"level\" column.";
-                $this->skipped++;
-                continue;
-            }
-
-            $classGroup = ClassGroup::where('name', $className)
-                ->where('programme_id', $student->programme_id)
-                ->where('level', $targetLevel)
-                ->first();
+            // Class names are unique school-wide, so the class alone identifies the level.
+            $classGroup = ClassGroup::whereRaw('LOWER(name) = ?', [mb_strtolower($className)])->first();
 
             if (!$classGroup) {
-                $this->errors[] = "No class \"{$className}\" found for student {$indexNumber}'s programme at level {$targetLevel}.";
+                $this->errors[] = "No class named \"{$className}\" (pupil {$indexNumber}). Create it under Classes first.";
                 $this->skipped++;
                 continue;
             }
 
-            $student->update(['class_group_id' => $classGroup->id, 'level' => $targetLevel]);
+            $student->update(['class_group_id' => $classGroup->id, 'level' => $classGroup->level]);
 
             $this->processed++;
         }
@@ -90,7 +77,6 @@ class ClassListImport implements ToCollection, WithHeadingRow, WithValidation, S
         return [
             'index_number' => 'required',
             'class_name' => 'required',
-            'level' => 'nullable|integer|min:100',
         ];
     }
 

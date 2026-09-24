@@ -13,8 +13,8 @@ class ArrearsTemplateExport implements FromArray, WithHeadings
     public function array(): array
     {
         return [
-            ['1234567', '2022/2023', 350.00, 'Outstanding hostel fee'],
-            ['2345678', '2021/2022', 500.00, ''],
+            ['SCH/2026/0001', '2025/2026', 350.00, 'Unpaid Third Term fees'],
+            ['SCH/2026/0002', '2025/2026', -120.00, 'Overpayment carried forward'],
         ];
     }
 
@@ -25,6 +25,6 @@ class ArrearsTemplateExport implements FromArray, WithHeadings
      */
     public function headings(): array
     {
-        return ['reference_number', 'academic_year', 'amount', 'notes'];
+        return ['admission_number', 'academic_year', 'amount', 'notes'];
     }
 }

@@ -1,320 +1,170 @@
 @extends('components.app-layout')
 
 @section('title', 'Dashboard')
-@section('subtitle', 'Overview of your transcript system')
+@section('subtitle', $term ? $term->full_name : 'No current term set')
 
 @section('content')
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <!-- Welcome Banner -->
-    <div class="col-span-1 md:col-span-3">
-        <div class="gradient-bg rounded-lg shadow-lg p-6 text-white">
-            <div class="flex flex-col md:flex-row justify-between items-center">
-                <div>
-                    <h2 class="text-2xl font-bold mb-2">Welcome to {{ \App\Models\Setting::get('institution_name', 'Your School Name') }}</h2>
-                    <p class="opacity-90">Manage student transcripts, subjects, and academic records efficiently.</p>
-                </div>
-                <div class="mt-4 md:mt-0">
-                    <a href="{{ route('transcripts.index') }}" class="inline-flex items-center px-4 py-2 bg-white text-primary-600 rounded-lg font-medium shadow-sm hover:bg-gray-50 transition-colors">
-                        <i class="fas fa-file-alt mr-2"></i> View Transcripts
-                    </a>
-                </div>
-            </div>
+<div class="space-y-6">
+    <!-- Welcome -->
+    <div class="gradient-bg rounded-lg shadow-lg p-6 text-white flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div>
+            <h2 class="text-2xl font-bold">{{ \App\Models\Setting::get('institution_name', 'Your School Name') }}</h2>
+            <p class="opacity-90">
+                {{ $term ? $term->full_name : 'Set the current term under Terms to get started.' }}
+                @if($term?->vacation_date) &bull; Vacation {{ $term->vacation_date->format('d M Y') }} @endif
+            </p>
         </div>
-    </div>
-
-    <!-- Stats Cards -->
-    <div class="bg-gradient-to-br from-purple-400 to-purple-500 rounded-lg shadow-lg p-6 transform transition-all duration-200 hover:scale-105">
-        <div class="flex items-center">
-            <div class="p-3 rounded-full bg-white bg-opacity-20">
-                <i class="fas fa-user-graduate text-2xl text-white"></i>
-            </div>
-            <div class="ml-4">
-                <h3 class="text-sm font-medium text-white text-opacity-90">Total Students</h3>
-                <div class="flex items-center">
-                    <span class="text-2xl font-bold text-white">{{ $totalStudents ?? 0 }}</span>
-                    @if(isset($studentGrowth))
-                        <span class="ml-2 text-sm font-medium text-white bg-white bg-opacity-20 px-2 py-0.5 rounded-full">
-                            <i class="fas fa-arrow-{{ $studentGrowth >= 0 ? 'up' : 'down' }}"></i> {{ abs($studentGrowth) }}%
-                        </span>
-                    @endif
-                </div>
-            </div>
-        </div>
-        <div class="mt-4">
-            <a href="{{ route('students.index') }}" class="text-sm text-white hover:text-opacity-75 font-medium inline-flex items-center">
-                View all students <i class="fas fa-arrow-right ml-2 transition-transform group-hover:translate-x-1"></i>
+        <div class="flex flex-wrap gap-2">
+            @can('manage-fees')
+                <a href="{{ route('fees.index') }}" class="inline-flex items-center px-4 py-2 bg-white text-primary-700 rounded-lg font-medium shadow-sm hover:bg-gray-50">
+                    <i class="fas fa-cash-register mr-2"></i> Receive Fees
+                </a>
+            @endcan
+            @canany(['enter-scores', 'manage-results'])
+                <a href="{{ route('scores.index') }}" class="inline-flex items-center px-4 py-2 bg-white/20 text-white rounded-lg font-medium hover:bg-white/30">
+                    <i class="fas fa-pen-alt mr-2"></i> Enter Scores
+                </a>
+            @endcanany
+            <a href="{{ route('report-cards.bulk-form') }}" class="inline-flex items-center px-4 py-2 bg-white/20 text-white rounded-lg font-medium hover:bg-white/30">
+                <i class="fas fa-print mr-2"></i> Print Reports
             </a>
         </div>
     </div>
 
-    <div class="bg-gradient-to-br from-orange-300 to-orange-400 rounded-lg shadow-lg p-6 transform transition-all duration-200 hover:scale-105">
-        <div class="flex items-center">
-            <div class="p-3 rounded-full bg-white bg-opacity-20">
-                <i class="fas fa-book text-2xl text-white"></i>
-            </div>
-            <div class="ml-4">
-                <h3 class="text-sm font-medium text-white text-opacity-90">Total Subjects</h3>
-                <div class="flex items-center">
-                    <span class="text-2xl font-bold text-white">{{ $totalSubjects ?? 0 }}</span>
-                    @if(isset($subjectGrowth))
-                        <span class="ml-2 text-sm font-medium text-white bg-white bg-opacity-20 px-2 py-0.5 rounded-full">
-                            <i class="fas fa-arrow-{{ $subjectGrowth >= 0 ? 'up' : 'down' }}"></i> {{ abs($subjectGrowth) }}%
-                        </span>
-                    @endif
-                </div>
-            </div>
+    <!-- Pupils -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-lg shadow p-5">
+            <p class="text-sm text-gray-500">Pupils on roll</p>
+            <p class="text-3xl font-bold text-gray-900">{{ $stats['pupils'] }}</p>
+            <p class="text-xs text-gray-500">{{ $stats['boys'] }} boys · {{ $stats['girls'] }} girls</p>
         </div>
-        <div class="mt-4">
-            <a href="{{ route('subjects.index') }}" class="text-sm text-white hover:text-opacity-75 font-medium inline-flex items-center">
-                View all subjects <i class="fas fa-arrow-right ml-2 transition-transform group-hover:translate-x-1"></i>
-            </a>
+        @foreach($sections as $section)
+            <div class="bg-white rounded-lg shadow p-5">
+                <p class="text-sm text-gray-500">{{ $section['label'] }}</p>
+                <p class="text-3xl font-bold text-gray-900">{{ $section['count'] }}</p>
+            </div>
+        @endforeach
+        <div class="bg-white rounded-lg shadow p-5">
+            <p class="text-sm text-gray-500">Classes / Teachers</p>
+            <p class="text-3xl font-bold text-gray-900">{{ $stats['classes'] }} <span class="text-lg text-gray-400">/ {{ $stats['teachers'] }}</span></p>
+            @if($stats['unplaced'])
+                <a href="{{ route('students.index', ['unplaced' => 1]) }}" class="text-xs text-orange-600 hover:underline">{{ $stats['unplaced'] }} pupil(s) not in a class</a>
+            @endif
         </div>
     </div>
 
-    <div class="bg-gradient-to-br from-cyan-400 to-cyan-500 rounded-lg shadow-lg p-6 transform transition-all duration-200 hover:scale-105">
-        <div class="flex items-center">
-            <div class="p-3 rounded-full bg-white bg-opacity-20">
-                <i class="fas fa-chart-line text-2xl text-white"></i>
+    @if($showFees && $fees)
+        <!-- Fees -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-green-600 rounded-lg shadow p-5 text-white">
+                <p class="text-sm opacity-90">Collected today</p>
+                <p class="text-2xl font-bold">GH₵ {{ number_format($fees['today'], 2) }}</p>
+                <p class="text-xs opacity-80">{{ $fees['todayCount'] }} payment(s) · GH₵ {{ number_format($fees['week'], 2) }} this week</p>
             </div>
-            <div class="ml-4">
-                <h3 class="text-sm font-medium text-white text-opacity-90">Average Aggregate</h3>
-                <div class="flex items-center">
-                    <span class="text-2xl font-bold text-white">{{ number_format($averageAggregate, 1) }}</span>
-                    @if(isset($transcriptGrowth))
-                        <span class="ml-2 text-sm font-medium {{ $transcriptGrowth >= 0 ? 'text-green-500' : 'text-red-500' }}">
-                            <i class="fas fa-arrow-{{ $transcriptGrowth >= 0 ? 'up' : 'down' }}"></i> {{ abs($transcriptGrowth) }}%
-                        </span>
-                    @endif
-                </div>
+            <div class="bg-white rounded-lg shadow p-5">
+                <p class="text-sm text-gray-500">Collected this term</p>
+                <p class="text-2xl font-bold text-gray-900">GH₵ {{ number_format($fees['collected'], 2) }}</p>
+                <p class="text-xs text-gray-500">of GH₵ {{ number_format($fees['billed'], 2) }} billed ({{ $fees['rate'] }}%)</p>
+                <div class="mt-2 h-2 bg-gray-100 rounded"><div class="h-2 bg-green-500 rounded" style="width: {{ min(100, $fees['rate']) }}%"></div></div>
             </div>
-        </div>
-    </div>
-
-    <div class="bg-white rounded-lg shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow">
-        <div class="flex items-center">
-            <div class="p-3 rounded-full bg-indigo-100 text-indigo-600">
-                <i class="fas fa-chart-line text-xl"></i>
+            <div class="bg-white rounded-lg shadow p-5">
+                <p class="text-sm text-gray-500">Total owed by parents</p>
+                <p class="text-2xl font-bold text-red-600">GH₵ {{ number_format($fees['outstanding'], 2) }}</p>
+                <a href="{{ route('fees.index', ['status' => 'debtors', 'sort' => 'balance']) }}" class="text-xs text-primary-600 hover:underline">{{ $fees['debtors'] }} pupil(s) owing →</a>
             </div>
-            <div class="ml-4">
-                <h3 class="text-sm font-medium text-gray-500">Average Aggregate</h3>
-                <div class="flex items-center">
-                    <span class="text-2xl font-bold text-gray-800">{{ number_format($averageAggregate, 1) }}</span>
-                </div>
+            <div class="bg-white rounded-lg shadow p-5">
+                <p class="text-sm text-gray-500">Not yet billed this term</p>
+                <p class="text-2xl font-bold {{ $fees['unbilled'] ? 'text-orange-600' : 'text-gray-900' }}">{{ $fees['unbilled'] }} pupil(s)</p>
+                @if($fees['unbilled'] && $term)
+                    <a href="{{ route('fees.billing', ['semester_id' => $term->id]) }}" class="text-xs text-primary-600 hover:underline">Bill them now →</a>
+                @endif
             </div>
         </div>
-        <div class="mt-4">
-            <a href="{{ route('results.index') }}" class="text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-                View all results <i class="fas fa-arrow-right ml-1"></i>
-            </a>
-        </div>
-    </div>
 
-    <!-- Aggregate Distribution Chart -->
-    <div class="col-span-1 md:col-span-2 bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 class="text-lg font-medium text-gray-800 mb-4">Aggregate Distribution</h3>
-        <div class="h-64">
-
-                <canvas id="aggregateChart" class="w-full" style="height: 400px;"></canvas>
-
-        </div>
-    </div>
-
-    <!-- Top Students -->
-    <div class="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 class="text-lg font-medium text-gray-800 mb-4">Top Students</h3>
-        <div class="space-y-4">
-            @forelse($topStudents as $student)
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <img class="h-10 w-10 rounded-full" 
-                             src="https://ui-avatars.com/api/?name={{ urlencode($student['name']) }}&background=0D9488&color=fff" 
-                             alt="{{ $student['name'] }}">
-                    </div>
-                    <div class="ml-4">
-                        <h4 class="text-sm font-medium text-gray-800">{{ $student['name'] }}</h4>
-                        <p class="text-xs text-gray-500">Aggregate: {{ $student['aggregate'] ?? 'Pending' }}</p>
-                        <p class="text-xs text-gray-400">{{ $student['programme']['name'] ?? 'N/A' }}</p>
-                    </div>
-                </div>
-            @empty
-                <div class="text-center py-4">
-                    <p class="text-gray-500">No student data available.</p>
-                </div>
-            @endforelse
-        </div>
-        <div class="mt-4 pt-4 border-t border-gray-100">
-            <a href="{{ route('students.index') }}" class="text-sm text-primary-600 hover:text-primary-700 font-medium">
-                View all students <i class="fas fa-arrow-right ml-1"></i>
-            </a>
-        </div>
-    </div>
-
-    <!-- Recent Activities -->
-    <div class="col-span-1 md:col-span-2 bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-medium text-gray-800">Recent Activities</h3>
-            <div class="flex space-x-2">
-                <button class="px-3 py-1 text-xs font-medium bg-primary-50 text-primary-600 rounded-full">All</button>
-                <button class="px-3 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded-full">Results</button>
-                <button class="px-3 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded-full">Transcripts</button>
-            </div>
-        </div>
-        <div class="space-y-4 max-h-80 overflow-y-auto pr-2">
-            @if(!empty($recentActivities))
-                @foreach($recentActivities as $activity)
-                    <div class="flex items-start">
-                        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                            <i class="fas fa-file-alt"></i>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="font-semibold text-gray-900 mb-4">Daily collections (last 14 days)</h3>
+                @php
+                    $days = collect(range(13, 0))->map(fn ($d) => now()->subDays($d));
+                    $max = max(1, $fees['daily']->max() ?? 1);
+                @endphp
+                <div class="flex items-end gap-1 h-40">
+                    @foreach($days as $day)
+                        @php $v = (float) ($fees['daily'][$day->toDateString()] ?? 0); @endphp
+                        <div class="flex-1 flex flex-col items-center justify-end h-full" title="{{ $day->format('D d M') }}: GH₵ {{ number_format($v, 2) }}">
+                            <div class="w-full bg-primary-500 rounded-t" style="height: {{ $v > 0 ? max(3, $v / $max * 100) : 0 }}%"></div>
+                            <span class="text-[10px] text-gray-400 mt-1">{{ $day->format('d') }}</span>
                         </div>
-                        <div class="ml-3">
-                            <p class="text-sm text-gray-800">{{ $activity['message'] }}</p>
-                            <div class="flex items-center mt-1">
-                                <span class="text-xs text-gray-500">{{ $activity['user'] }}</span>
-                                <span class="mx-1 text-gray-300">•</span>
-                                <span class="text-xs text-gray-500">{{ $activity['time'] }}</span>
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
-            @else
-                <div class="text-center py-4">
-                    <p class="text-gray-500">No recent activities found.</p>
+                    @endforeach
                 </div>
-            @endif
-        </div>
-    </div>
+            </div>
 
-    <!-- Academic Calendar Overview -->
-    <div class="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-        <h3 class="text-lg font-medium text-gray-800 mb-4">Academic Calendar</h3>
-        <div class="space-y-4">
-            @if($currentAcademicYear)
-                <div class="flex items-start">
-                    <div class="min-w-[50px] text-center">
-                        <div class="text-xs font-medium text-gray-500">Year</div>
-                        <div class="text-lg font-bold gradient-text">{{ $academicYearProgress }}%</div>
-                    </div>
-                    <div class="ml-4">
-                        <h4 class="text-sm font-medium text-gray-800">{{ $currentAcademicYear->name }}</h4>
-                        <p class="text-xs text-gray-500 mt-1">
-                            {{ Carbon\Carbon::parse($currentAcademicYear->start_date)->format('M d, Y') }} - 
-                            {{ Carbon\Carbon::parse($currentAcademicYear->end_date)->format('M d, Y') }}
-                        </p>
-                    </div>
+            <div class="bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b flex justify-between items-center">
+                    <h3 class="font-semibold text-gray-900">Latest payments</h3>
+                    <a href="{{ route('fees.report') }}" class="text-sm text-primary-600 hover:underline">Cash book</a>
                 </div>
-            @endif
+                <table class="min-w-full text-sm">
+                    @forelse($fees['recent'] as $payment)
+                        <tr class="border-b border-gray-100">
+                            <td class="px-6 py-2">
+                                <a href="{{ route('fees.show', $payment->student_id) }}" class="font-medium text-gray-900 hover:text-primary-600">{{ $payment->student->full_name ?? '—' }}</a>
+                                <div class="text-xs text-gray-500">{{ $payment->student?->classGroup->name }} · {{ $payment->receipt_number }}</div>
+                            </td>
+                            <td class="px-6 py-2 text-gray-500 whitespace-nowrap">{{ $payment->payment_date->format('d M') }}</td>
+                            <td class="px-6 py-2 text-right font-semibold whitespace-nowrap">GH₵ {{ number_format($payment->amount, 2) }}</td>
+                        </tr>
+                    @empty
+                        <tr><td class="px-6 py-6 text-center text-gray-400">No payments recorded yet.</td></tr>
+                    @endforelse
+                </table>
+            </div>
+        </div>
+    @endif
 
-            @if($currentSemester)
-                <div class="flex items-start">
-                    <div class="min-w-[50px] text-center">
-                        <div class="text-xs font-medium text-gray-500">Term</div>
-                        <div class="text-lg font-bold gradient-text">{{ $semesterProgress }}%</div>
-                    </div>
-                    <div class="ml-4">
-                        <h4 class="text-sm font-medium text-gray-800">{{ $currentSemester->name }}</h4>
-                        <p class="text-xs text-gray-500 mt-1">
-                            {{ Carbon\Carbon::parse($currentSemester->start_date)->format('M d, Y') }} - 
-                            {{ Carbon\Carbon::parse($currentSemester->end_date)->format('M d, Y') }}
-                        </p>
-                    </div>
-                </div>
-            @endif
+    @if($showAcademics && $classProgress->isNotEmpty())
+        <!-- Terminal report progress -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b">
+                <h3 class="font-semibold text-gray-900">Terminal report progress — {{ $term->full_name }}</h3>
+                <p class="text-sm text-gray-500">How much of each class's scores and remarks have been entered.</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class teacher</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pupils</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-48">Scores</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-48">Remarks</th>
+                            <th class="px-6 py-3"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach($classProgress as $row)
+                            <tr>
+                                <td class="px-6 py-3 font-medium">{{ $row['class']->name }}</td>
+                                <td class="px-6 py-3 text-gray-600">{{ $row['class']->classTeacher->name ?? '—' }}</td>
+                                <td class="px-6 py-3 text-right">{{ $row['roll'] }}</td>
+                                @foreach(['scores', 'remarks'] as $k)
+                                    <td class="px-6 py-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex-1 h-2 bg-gray-100 rounded"><div class="h-2 rounded {{ $row[$k] >= 100 ? 'bg-green-500' : 'bg-primary-500' }}" style="width: {{ $row[$k] }}%"></div></div>
+                                            <span class="text-xs text-gray-500 w-9 text-right">{{ $row[$k] }}%</span>
+                                        </div>
+                                    </td>
+                                @endforeach
+                                <td class="px-6 py-3 text-right whitespace-nowrap">
+                                    <a href="{{ route('scores.broadsheet', ['classGroup' => $row['class'], 'semester_id' => $term->id]) }}" class="text-primary-600 hover:underline text-xs mr-3">Broadsheet</a>
+                                    <a href="{{ route('report-cards.bulk-print', ['class_group_id' => $row['class']->id, 'semester_id' => $term->id]) }}" target="_blank" class="text-primary-600 hover:underline text-xs">Reports</a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
-        <div class="mt-4 pt-4 border-t border-gray-100">
-            <a href="#" class="text-sm text-primary-600 hover:text-primary-700 font-medium">
-                View all events <i class="fas fa-arrow-right ml-1"></i>
-            </a>
-        </div>
-    </div>
+    @endif
 </div>
 @endsection
-
-@push('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const canvas = document.getElementById('aggregateChart');
-        if (!canvas) {
-            console.error('Canvas element not found');
-            return;
-        }
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            console.error('Could not get 2d context');
-            return;
-        }
-
-        console.log('Data:', {
-            labels: {!! json_encode(array_keys($aggregateDistribution)) !!},
-            data: {!! json_encode(array_values($aggregateDistribution)) !!}
-        });
-
-        try {
-            new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: {!! json_encode(array_keys($aggregateDistribution)) !!},
-                datasets: [{
-                    label: 'Number of Students',
-                    data: {!! json_encode(array_values($aggregateDistribution)) !!},
-                    backgroundColor: [
-                    'rgba(255, 99, 132, 0.5)',
-                    'rgba(54, 162, 235, 0.5)',
-                    'rgba(255, 206, 86, 0.5)',
-                    'rgba(75, 192, 192, 0.5)',
-                    'rgba(153, 102, 255, 0.5)'
-                ],
-                borderColor: [
-                    'rgba(255, 99, 132, 1)',
-                    'rgba(54, 162, 235, 1)',
-                    'rgba(255, 206, 86, 1)',
-                    'rgba(75, 192, 192, 1)',
-                    'rgba(153, 102, 255, 1)'
-                ],
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            stepSize: 1
-                        },
-                        title: {
-                            display: true,
-                            text: 'Number of Students'
-                        }
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Division'
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    title: {
-                        display: true,
-                        text: 'Aggregate Distribution',
-                        font: {
-                            size: 16
-                        }
-                    }
-                },
-                maintainAspectRatio: false
-            }
-            });
-        } catch (error) {
-            console.error('Error creating chart:', error);
-        }
-    });
-    </script>
-    @endpush
-
- 

@@ -38,7 +38,7 @@
                                     <div class="px-6 py-4 border-b bg-gray-50">
                                         <div class="flex justify-between items-start mb-2">
                                             <div>
-                                                <h3 class="text-lg font-medium text-gray-900">{{ $scheme->name }}</h3>
+                                                <h3 class="text-lg font-medium text-gray-900">{{ $scheme->name }}</h3>@if($scheme->section)<p class="text-xs text-gray-500">{{ \App\Support\FormLabel::SECTIONS[$scheme->section] ?? $scheme->section }}</p>@endif
                                                 <p class="text-sm text-gray-500">{{ $scheme->description }}</p>
                                             </div>
                                             <div class="flex items-center space-x-2">
@@ -87,6 +87,7 @@
                                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grade</th>
                                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Range</th>
                                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
+                                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Remark</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody class="divide-y divide-gray-200">
@@ -95,6 +96,7 @@
                                                             <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{{ $grade->grade }}</td>
                                                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{{ number_format($grade->min_score, 1) }}+</td>
                                                             <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{{ number_format($grade->grade_value, 0) }}</td>
+                                                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{{ $grade->remark }}</td>
                                                         </tr>
                                                     @endforeach
                                                 </tbody>

@@ -2,85 +2,122 @@
 
 namespace App\Imports;
 
+use App\Models\ClassGroup;
+use App\Models\Setting;
 use App\Models\Student;
-use Maatwebsite\Excel\Concerns\ToModel;
+use Illuminate\Support\Collection;
+use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
+use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
-use Maatwebsite\Excel\Concerns\WithValidation;
-use Illuminate\Validation\Rule;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 
-class StudentsImport implements ToModel, WithHeadingRow, WithValidation
+/**
+ * Bulk admission from a class list spreadsheet. Columns (headings, any order):
+ *   full_name*, gender* (Male/Female, M/F, Boy/Girl), class* (class name, e.g. "Basic 4A"),
+ *   admission_number (blank = next number), date_of_birth, parent_name, relationship,
+ *   parent_phone, address
+ *
+ * Rows with an admission number that already exists update that pupil instead of failing,
+ * so the same sheet can be re-uploaded after corrections.
+ */
+class StudentsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 {
-    /**
-     * @param array $row
-     *
-     * @return \Illuminate\Database\Eloquent\Model|null
-     */
-    public function model(array $row)
+    public int $created = 0;
+    public int $updated = 0;
+    public array $errors = [];
+
+    public function collection(Collection $rows)
     {
-        // Clean and format the index number
-        $indexNumber = trim((string) $row['index_number']);
-        
-        return new Student([
-            'index_number'           => $indexNumber,
-            'full_name'              => $row['full_name'],
-            'date_of_birth'          => $this->transformDate($row['date_of_birth']),
-            'gender'                 => $row['gender'],
-            'programme_id'           => $row['programme_id'],
-            'email'                  => $row['email'] ?? null,
-            'phone'                  => $row['phone'] ?? null,
-            'address'                => $row['address'] ?? null,
-            'emergency_contact_name' => $row['emergency_contact_name'] ?? null,
-            'emergency_contact_phone'=> $row['emergency_contact_phone'] ?? null,
-        ]);
+        $classes = ClassGroup::all()->keyBy(fn ($c) => mb_strtolower(trim($c->name)));
+        $prefix = strtoupper(Setting::get('institution_code', 'SCH') ?: 'SCH') . '/' . now()->year . '/';
+        $next = (Student::where('index_number', 'like', $prefix . '%')->pluck('index_number')
+            ->map(fn ($n) => (int) substr($n, strlen($prefix)))->max() ?? 0) + 1;
+
+        foreach ($rows as $i => $row) {
+            $line = $i + 2;
+            $name = trim((string) ($row['full_name'] ?? ''));
+            $className = mb_strtolower(trim((string) ($row['class'] ?? '')));
+            $gender = $this->gender($row['gender'] ?? '');
+
+            if ($name === '') {
+                continue;
+            }
+
+            if (!$gender) {
+                $this->errors[] = "Row {$line} ({$name}): gender must be Male or Female.";
+                continue;
+            }
+
+            $class = $classes->get($className);
+            if (!$class) {
+                $this->errors[] = "Row {$line} ({$name}): class \"" . ($row['class'] ?? '') . '" not found. Create it under Classes first.';
+                continue;
+            }
+
+            $admissionNumber = trim((string) ($row['admission_number'] ?? ''));
+            $data = [
+                'full_name' => $name,
+                'gender' => $gender,
+                'class_group_id' => $class->id,
+                'level' => $class->level,
+                'date_of_birth' => $this->date($row['date_of_birth'] ?? null),
+                'emergency_contact_name' => $row['parent_name'] ?? null,
+                'emergency_contact_relationship' => $row['relationship'] ?? null,
+                'emergency_contact_phone' => isset($row['parent_phone']) ? $this->phone($row['parent_phone']) : null,
+                'address' => $row['address'] ?? null,
+                'status' => 'active',
+            ];
+
+            $existing = $admissionNumber !== '' ? Student::where('index_number', $admissionNumber)->first() : null;
+
+            if ($existing) {
+                $existing->update(array_filter($data, fn ($v) => $v !== null && $v !== ''));
+                $this->updated++;
+                continue;
+            }
+
+            Student::create($data + [
+                'index_number' => $admissionNumber !== '' ? $admissionNumber : $prefix . str_pad((string) $next++, 4, '0', STR_PAD_LEFT),
+            ]);
+            $this->created++;
+        }
+    }
+
+    private function gender($value): ?string
+    {
+        return match (mb_strtolower(trim((string) $value))) {
+            'male', 'm', 'boy', 'b' => 'Male',
+            'female', 'f', 'girl', 'g' => 'Female',
+            default => null,
+        };
     }
 
     /**
-     * @return array
+     * Excel drops the leading zero of Ghanaian numbers stored as numbers (241234567).
      */
-    public function rules(): array
+    private function phone($value): string
     {
-        return [
-            'index_number' => [
-               
-                Rule::unique('students', 'index_number'),
-            ],
-            'full_name' => 'required|string|max:255',
-            'date_of_birth' => 'required',
-            'gender' => 'required|in:Male,Female,Other',
-            'programme_id' => 'required|exists:programmes,id',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-            'emergency_contact_name' => 'nullable|string|max:255',
-            'emergency_contact_phone' => 'nullable|string|max:20',
-        ];
+        $phone = preg_replace('/[^\d+]/', '', (string) $value);
+
+        return strlen($phone) === 9 ? '0' . $phone : $phone;
     }
 
-    /**
-     * Transform a date value from the Excel file.
-     *
-     * @param mixed $value
-     * @return string
-     */
-    private function transformDate($value)
+    private function date($value): ?string
     {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
         try {
-            // Check if the value is numeric (Excel date format)
             if (is_numeric($value)) {
                 return Date::excelToDateTimeObject($value)->format('Y-m-d');
             }
-            
-            // If it's already a string in a date format, just return it
-            if (is_string($value) && strtotime($value)) {
-                return date('Y-m-d', strtotime($value));
-            }
-            
-            // Default fallback
-            return date('Y-m-d');
-        } catch (\Exception $e) {
-            // If any error occurs, return today's date as fallback
-            return date('Y-m-d');
+
+            $timestamp = strtotime(str_replace('/', '-', (string) $value));
+
+            return $timestamp ? date('Y-m-d', $timestamp) : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 }

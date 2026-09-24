@@ -123,11 +123,7 @@
                                 <i class="fas fa-key me-1"></i>Forgot your password?
                             </a>
                         </div>
-                        <div class="text-center mt-2">
-                            <a href="{{ route('admission.verify') }}" class="text-decoration-none small text-muted">
-                                Not admitted yet? Apply for Admission
-                            </a>
-                        </div>
+
                     </div>
                 </div>
             </div>

@@ -3,50 +3,62 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClassGroup;
+use App\Models\GradeScheme;
 use App\Models\Semester;
+use App\Models\Setting;
 use App\Models\Student;
+use App\Services\TerminalReportService;
+use App\Traits\ScopesToTeacher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Report cards, viewable two ways:
- *  - show(): public, no-login, only reachable via a signed URL (see
- *    GradeNotificationService, which mints the link texted to a parent) - the
- *    `signed` middleware on that route rejects any request whose signature is
- *    missing, tampered with, or expired.
- *  - adminShow()/bulkForm()/bulkPrint(): logged-in staff viewing/printing
- *    report cards directly from the admin panel, individually or for a
- *    whole class at once, gated by the normal manage-results|view-results
- *    permission like the rest of the results screens.
+ * Terminal reports, viewable:
+ *  - show(): publicly via a signed link texted to a parent (see GradeNotificationService);
+ *  - adminShow()/bulkForm()/bulkPrint(): by staff, one pupil or a whole class at once;
+ *  - studentShow(): by the logged-in pupil for any term they have scores in.
  */
 class ReportCardController extends Controller
 {
+    use ScopesToTeacher;
+
     public function show(Request $request, Student $student)
     {
-        $data = $this->reportCardData($student, $request->integer('semester_id') ?: null);
+        $term = $this->termFor($student, $request->integer('semester_id') ?: null);
+        abort_unless($term, 404, 'No terminal report is available yet.');
 
-        return view('report-card.public', $data + ['publicLink' => true]);
+        $card = $this->cardFor($student, $term);
+        abort_unless($card, 404, 'No terminal report is available yet.');
+
+        return view('report-card.public', ['cards' => collect([$card]), 'publicLink' => true, 'student' => $student]);
     }
 
     public function adminShow(Request $request, Student $student)
     {
-        $data = $this->reportCardData($student, $request->integer('semester_id') ?: null);
+        $term = $this->termFor($student, $request->integer('semester_id') ?: null);
 
-        $semesters = Semester::orderBy('academic_year_id', 'desc')->orderBy('semester_number', 'desc')->get();
+        if (!$term) {
+            return back()->with('error', 'No terms have been created yet.');
+        }
 
-        return view('report-card.public', $data + [
+        $card = $this->cardFor($student, $term);
+
+        if (!$card) {
+            return back()->with('error', $student->full_name . ' is not in a class, so no terminal report can be produced.');
+        }
+
+        return view('report-card.public', [
+            'cards' => collect([$card]),
             'publicLink' => false,
-            'semesters' => $semesters,
-            'selectedSemesterId' => $request->integer('semester_id') ?: null,
+            'student' => $student,
+            'terms' => $this->terms(),
+            'selectedTermId' => $term->id,
         ]);
     }
 
     /**
-     * Self-service report card for the logged-in student: pick from the semesters they
-     * actually have results in and generate that one. The student is resolved from the
-     * authenticated session (never from a route parameter) so one student can never pull up
-     * another's report by guessing an id.
+     * The logged-in pupil's own reports - only terms they have scores in.
      */
     public function studentShow(Request $request)
     {
@@ -56,27 +68,16 @@ class ReportCardController extends Controller
             return redirect()->route('student.dashboard')->with('error', 'Student profile not found.');
         }
 
-        // Label each report "Form X Semester Y (Academic Year)" - the form comes from the
-        // subjects graded in that semester (subjects are level-specific rows, so every result
-        // in a semester shares one level) rather than the student's current level, since a
-        // student's form at the time of an old semester's results may differ from their form
-        // today after promotion.
         $availableReports = $student->results()
-            ->with(['subject', 'semester.academicYear'])
+            ->with('semester.academicYear')
             ->get()
-            ->groupBy('semester_id')
-            ->map(function ($resultsInSemester) {
-                $semester = $resultsInSemester->first()->semester;
-                $level = $resultsInSemester->first()->subject->level ?? null;
-
-                return [
-                    'semester_id' => $semester->id,
-                    'label' => ($level ? \App\Support\FormLabel::label($level) . ' ' : '') . $semester->name . ' (' . ($semester->academicYear->name ?? '') . ')',
-                    'academic_year_id' => $semester->academic_year_id,
-                    'semester_number' => $semester->semester_number,
-                ];
-            })
-            ->sortByDesc(fn ($r) => [$r['academic_year_id'], $r['semester_number']])
+            ->pluck('semester')
+            ->unique('id')
+            ->sortByDesc(fn ($t) => [$t->academicYear?->start_date?->timestamp ?? 0, $t->semester_number])
+            ->map(fn (Semester $term) => [
+                'semester_id' => $term->id,
+                'label' => $term->full_name,
+            ])
             ->values();
 
         $selectedSemesterId = $request->integer('semester_id') ?: null;
@@ -85,110 +86,152 @@ class ReportCardController extends Controller
             $selectedSemesterId = null;
         }
 
-        $data = $selectedSemesterId ? $this->reportCardData($student, $selectedSemesterId) : null;
+        $reportData = $selectedSemesterId ? $this->cardFor($student, Semester::find($selectedSemesterId)) : null;
 
-        return view('student.report-card', [
-            'student' => $student,
-            'availableReports' => $availableReports,
-            'selectedSemesterId' => $selectedSemesterId,
-            'reportData' => $data,
+        return view('student.report-card', compact('student', 'availableReports', 'selectedSemesterId', 'reportData'));
+    }
+
+    /**
+     * Choose a term and class (and optionally particular pupils) to print.
+     */
+    public function bulkForm(Request $request)
+    {
+        $classGroups = $this->allowedClasses();
+        $terms = $this->terms();
+
+        $students = collect();
+        $term = $request->filled('semester_id') ? $terms->firstWhere('id', (int) $request->semester_id) : ($terms->firstWhere('is_current', true) ?? $terms->first());
+
+        if ($request->filled('class_group_id') && $term) {
+            $classGroup = $classGroups->firstWhere('id', (int) $request->class_group_id);
+            $students = $classGroup ? TerminalReportService::classRoll($classGroup, $term) : collect();
+        }
+
+        return view('report-card.bulk-form', [
+            'classGroups' => $classGroups,
+            'semesters' => $terms,
+            'students' => $students,
+            'selectedTerm' => $term,
         ]);
     }
 
     /**
-     * Pick students to print report cards for - either an entire class at once,
-     * or a hand-picked selection (e.g. only students with results so far).
-     */
-    public function bulkForm(Request $request)
-    {
-        $classGroups = ClassGroup::with('programme')->orderBy('level')->orderBy('name')->get();
-        $semesters = Semester::orderBy('academic_year_id', 'desc')->orderBy('semester_number', 'desc')->get();
-
-        $students = collect();
-        if ($request->filled('class_group_id')) {
-            $students = Student::where('class_group_id', $request->class_group_id)
-                ->orderBy('full_name')
-                ->get();
-        }
-
-        return view('report-card.bulk-form', compact('classGroups', 'semesters', 'students'));
-    }
-
-    /**
-     * Render report cards for multiple students as one printable page (one
-     * per page via CSS page-break), sourced either from an explicit list of
-     * student_ids or every student in a given class_group_id.
+     * A whole class's terminal reports (or selected pupils), one per A4 page.
      */
     public function bulkPrint(Request $request)
     {
-        $semesterId = $request->integer('semester_id') ?: null;
+        $request->validate([
+            'class_group_id' => 'required|exists:class_groups,id',
+            'semester_id' => 'nullable|exists:semesters,id',
+            'student_ids' => 'nullable|array',
+        ]);
 
-        if ($request->filled('student_ids')) {
-            $students = Student::whereIn('id', (array) $request->input('student_ids'))
-                ->orderBy('full_name')
-                ->get();
-        } elseif ($request->filled('class_group_id')) {
-            $students = Student::where('class_group_id', $request->class_group_id)
-                ->orderBy('full_name')
-                ->get();
-        } else {
-            $students = collect();
+        $classGroup = ClassGroup::findOrFail($request->class_group_id);
+        abort_unless($this->allowedClasses()->contains('id', $classGroup->id), 403);
+
+        $term = Semester::with('academicYear')->find($request->integer('semester_id') ?: optional(Semester::where('is_current', true)->first())->id);
+
+        if (!$term) {
+            return back()->with('error', 'Choose a term.');
         }
 
-        if ($students->isEmpty()) {
-            return back()->with('error', 'No students selected to print report cards for.');
+        $onlyIds = $request->filled('student_ids') ? array_map('intval', (array) $request->student_ids) : null;
+        $data = TerminalReportService::forClass($classGroup, $term, $onlyIds);
+
+        if ($data['pupils']->isEmpty()) {
+            return back()->with('error', 'No pupils to print reports for.');
         }
 
-        $cards = $students->map(fn (Student $student) => $this->reportCardData($student, $semesterId));
+        $cards = $data['pupils']->map(fn ($pupil) => $this->decorate($pupil, $data));
 
         return view('report-card.bulk', compact('cards'));
     }
 
-    protected function reportCardData(Student $student, ?int $semesterId): array
+    /**
+     * One pupil's card for a term, or null if the pupil has no class to rank them in.
+     */
+    protected function cardFor(Student $student, Semester $term): ?array
     {
-        $student->load('programme');
+        $classGroup = TerminalReportService::classFor($student, $term);
 
-        $resultsQuery = $student->results()
-            ->with(['subject', 'semester', 'academicYear'])
-            ->orderBy('academic_year_id')
-            ->orderBy('semester_id');
+        if (!$classGroup) {
+            return null;
+        }
 
+        $data = TerminalReportService::forClass($classGroup, $term, [$student->id]);
+        $pupil = $data['pupils']->first();
+
+        return $pupil ? $this->decorate($pupil, $data) : null;
+    }
+
+    /**
+     * Add the class-wide details (term dates, roll, grading key, settings) and the pupil's
+     * fee position to one pupil's report data.
+     */
+    protected function decorate(array $pupil, array $classData): array
+    {
+        static $shared = [];
+        $key = $classData['classGroup']->id . '-' . $classData['term']->id;
+
+        if (!isset($shared[$key])) {
+            $scheme = GradeScheme::forLevel($classData['classGroup']->level);
+
+            $shared[$key] = [
+                'settings' => DB::table('settings')->whereIn('category', ['institution', 'system'])
+                    ->orderByRaw("category = 'institution'")->pluck('value', 'key')->toArray(),
+                'gradeBands' => $scheme ? $scheme->grades->sortByDesc('min_score')->values() : collect(),
+                'classMax' => TerminalReportService::classScoreMax(),
+                'examMax' => TerminalReportService::examScoreMax(),
+                'showFees' => Setting::get('report_show_fees', '1') === '1',
+                'headTitle' => Setting::get('head_title', 'Head Teacher'),
+            ];
+        }
+
+        return $pupil + $shared[$key] + [
+            'classGroup' => $classData['classGroup'],
+            'term' => $classData['term'],
+            'roll' => $classData['roll'],
+            'classAverage' => $classData['classAverage'],
+            'isJhs' => $classData['isJhs'],
+            'isFinalTerm' => $classData['term']->isFinalTerm(),
+            'fees' => TerminalReportService::feeSummary($pupil['student'], $classData['term']),
+        ];
+    }
+
+    /**
+     * The requested term, else the latest term the pupil has scores in, else the current term.
+     */
+    protected function termFor(Student $student, ?int $semesterId): ?Semester
+    {
         if ($semesterId) {
-            $resultsQuery->where('semester_id', $semesterId);
+            return Semester::with('academicYear')->find($semesterId);
         }
 
-        $results = $resultsQuery->get();
+        $latest = $student->results()->with('semester.academicYear')->get()->pluck('semester')->filter()
+            ->sortByDesc(fn ($t) => [$t->academicYear?->start_date?->timestamp ?? 0, $t->semester_number])
+            ->first();
 
-        $groupedResults = [];
-        foreach ($results as $result) {
-            $academicYearId = $result->academic_year_id;
-            $resultSemesterId = $result->semester_id;
+        return $latest ?? Semester::with('academicYear')->where('is_current', true)->first();
+    }
 
-            if (!isset($groupedResults[$academicYearId])) {
-                $groupedResults[$academicYearId] = [
-                    'academic_year' => $result->academicYear,
-                    'semesters' => [],
-                ];
-            }
+    private function terms()
+    {
+        return Semester::with('academicYear')->get()
+            ->sortByDesc(fn ($t) => [$t->academicYear?->start_date?->timestamp ?? 0, $t->semester_number])
+            ->values();
+    }
 
-            if (!isset($groupedResults[$academicYearId]['semesters'][$resultSemesterId])) {
-                $groupedResults[$academicYearId]['semesters'][$resultSemesterId] = [
-                    'semester' => $result->semester,
-                    'results' => [],
-                ];
-            }
+    private function allowedClasses()
+    {
+        $classes = ClassGroup::orderBy('level')->orderBy('name')->get();
 
-            $groupedResults[$academicYearId]['semesters'][$resultSemesterId]['results'][] = $result;
+        if (!$this->isScopedTeacher()) {
+            return $classes;
         }
 
-        $aggregate = $student->calculateAggregate($semesterId);
-        $gradeStanding = $student->getGradeStanding();
+        $teacherId = $this->authTeacherId() ?? 0;
+        $subjectLevels = \App\Models\Subject::whereHas('teachers', fn ($q) => $q->where('teachers.id', $teacherId))->pluck('level')->unique();
 
-        $institutionSettings = DB::table('settings')
-            ->where('category', 'institution')
-            ->pluck('value', 'key')
-            ->toArray();
-
-        return compact('student', 'groupedResults', 'aggregate', 'gradeStanding', 'institutionSettings');
+        return $classes->filter(fn ($c) => $c->class_teacher_id === $teacherId || $subjectLevels->contains($c->level))->values();
     }
 }

@@ -1,281 +1,133 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Student Details') }}
-            </h2>
-            <div class="flex space-x-2">
-                <x-button href="{{ route('students.edit', $student) }}" icon="fas fa-edit">
-                    {{ __('Edit') }}
-                </x-button>
+        <div class="flex flex-wrap justify-between items-center gap-3">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ $student->full_name }}</h2>
+            <div class="flex flex-wrap gap-2">
+                <x-button href="{{ route('students.edit', $student) }}" icon="fas fa-edit">Edit</x-button>
                 @if(!$student->user)
-                <x-button href="{{ route('students.create-account', $student->id) }}" variant="success" icon="fas fa-user-plus">
-                    {{ __('Create Login Account') }}
-                </x-button>
-                @else
-                <x-button disabled variant="success" icon="fas fa-user-check">
-                    {{ __('Has Login Account') }}
-                </x-button>
+                    <x-button href="{{ route('students.create-account', $student->id) }}" variant="secondary" icon="fas fa-user-plus">Create Portal Login</x-button>
                 @endif
-                <x-button href="{{ route('students.index') }}" variant="secondary" icon="fas fa-arrow-left">
-                    {{ __('Back to Students') }}
-                </x-button>
+                <x-button href="{{ route('students.index', ['class_group_id' => $student->class_group_id]) }}" variant="secondary" icon="fas fa-arrow-left">Pupils</x-button>
             </div>
         </div>
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <!-- Student Profile -->
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
-                <div class="p-6">
-                    <div class="flex flex-col md:flex-row">
-                        <!-- Student Photo and Basic Info -->
-                        <div class="md:w-1/3 flex flex-col items-center md:border-r md:pr-6">
-                            <div class="w-32 h-32 rounded-full overflow-hidden mb-4">
-                                @if($student->profile_photo)
-                                    <img src="{{ asset('storage/' . $student->profile_photo) }}" alt="{{ $student->full_name }}" class="w-full h-full object-cover">
-                                @else
-                                    <img src="https://ui-avatars.com/api/?name={{ urlencode($student->full_name) }}&color=7F9CF5&background=EBF4FF&size=128" alt="{{ $student->full_name }}" class="w-full h-full object-cover">
-                                @endif
-                            </div>
-                            <h3 class="text-xl font-bold text-gray-900 mb-1">{{ $student->full_name }}</h3>
-                            <p class="text-sm text-gray-500 mb-2">{{ $student->index_number }}</p>
-                            
-                            <div class="flex items-center mb-4">
-                                @if($student->status === 'active')
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                        Active
-                                    </span>
-                                @elseif($student->status === 'graduated')
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                        Graduated{{ $student->graduation_year ? ' (' . $student->graduation_year . ')' : '' }}
-                                    </span>
-                                @elseif($student->status === 'inactive')
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                        Inactive
-                                    </span>
-                                @elseif($student->status === 'suspended')
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                                        Suspended
-                                    </span>
-                                @endif
-                            </div>
-                            
-                            <div class="w-full mt-4 space-y-3">
-                                <div class="flex items-center">
-                                    <i class="fas fa-envelope text-gray-400 w-5"></i>
-                                    <span class="ml-2 text-sm text-gray-600">{{ $student->email }}</span>
-                                </div>
-                                @if($student->phone)
-                                <div class="flex items-center">
-                                    <i class="fas fa-phone text-gray-400 w-5"></i>
-                                    <span class="ml-2 text-sm text-gray-600">{{ $student->phone }}</span>
-                                </div>
-                                @endif
-                                @if($student->date_of_birth)
-                                <div class="flex items-center">
-                                    <i class="fas fa-birthday-cake text-gray-400 w-5"></i>
-                                    <span class="ml-2 text-sm text-gray-600">{{ date('M d, Y', strtotime($student->date_of_birth)) }}</span>
-                                </div>
-                                @endif
-                                @if($student->address)
-                                <div class="flex items-start">
-                                    <i class="fas fa-map-marker-alt text-gray-400 w-5 mt-0.5"></i>
-                                    <span class="ml-2 text-sm text-gray-600">{{ $student->address }}</span>
-                                </div>
-                                @endif
-                            </div>
-                            
-                            <div class="mt-6 w-full space-y-3">
-                                @canany(['manage-results', 'view-results'])
-                                <x-button href="{{ route('students.report-card', $student) }}" target="_blank" variant="secondary" class="w-full justify-center" icon="fas fa-id-card">
-                                    {{ __('View / Print Report Card') }}
-                                </x-button>
-                                @endcanany
+    <div class="py-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Profile -->
+            <div class="space-y-6">
+                <div class="bg-white shadow-sm rounded-lg p-6 text-center">
+                    <x-student-photo :student="$student" class="w-32 h-32 rounded-full object-cover mx-auto border-4 border-primary-100" />
+                    <h3 class="text-xl font-bold text-gray-900 mt-3">{{ $student->full_name }}</h3>
+                    <p class="text-sm text-gray-500">{{ $student->index_number }}</p>
+                    <p class="mt-2">
+                        <span class="px-3 py-1 rounded-full text-xs font-medium {{ $student->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700' }}">
+                            {{ ['active' => 'In school', 'graduated' => 'Completed' . ($student->graduation_year ? ' ' . $student->graduation_year : ''), 'withdrawn' => 'Withdrawn'][$student->status] ?? ucfirst($student->status) }}
+                        </span>
+                    </p>
+                    <dl class="mt-4 text-sm text-left divide-y">
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Class</dt><dd class="font-medium">{{ $student->classGroup->name ?? \App\Support\FormLabel::label($student->level) . ' (no class)' }}</dd></div>
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Gender</dt><dd class="font-medium">{{ $student->gender === 'Male' ? 'Boy' : ($student->gender === 'Female' ? 'Girl' : '—') }}</dd></div>
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Date of birth</dt><dd class="font-medium">{{ $student->date_of_birth?->format('d M Y') ?? '—' }}{{ $student->date_of_birth ? ' (' . $student->date_of_birth->age . ' yrs)' : '' }}</dd></div>
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Hometown</dt><dd class="font-medium">{{ $student->hometown ?: '—' }}</dd></div>
+                    </dl>
+                </div>
 
-                                <x-button href="{{ route('transcripts.generate', $student) }}" class="w-full justify-center" icon="fas fa-file-alt">
-                                    {{ __('Generate Transcript') }}
-                                </x-button>
+                <div class="bg-white shadow-sm rounded-lg p-6">
+                    <h3 class="font-semibold text-gray-900 mb-3"><i class="fas fa-user-friends text-primary-600 mr-2"></i>Parent / Guardian</h3>
+                    <dl class="text-sm divide-y">
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Name</dt><dd class="font-medium">{{ $student->emergency_contact_name ?: '—' }}</dd></div>
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Relationship</dt><dd class="font-medium">{{ $student->emergency_contact_relationship ?: '—' }}</dd></div>
+                        <div class="py-2 flex justify-between"><dt class="text-gray-500">Phone</dt><dd class="font-medium">{{ $student->emergency_contact_phone ?: '—' }}</dd></div>
+                        @if($student->phone)<div class="py-2 flex justify-between"><dt class="text-gray-500">Other phone</dt><dd class="font-medium">{{ $student->phone }}</dd></div>@endif
+                        @if($student->email)<div class="py-2 flex justify-between"><dt class="text-gray-500">Email</dt><dd class="font-medium">{{ $student->email }}</dd></div>@endif
+                        @if($student->address)<div class="py-2"><dt class="text-gray-500">Address</dt><dd class="font-medium">{{ $student->address }} {{ $student->gps_address ? '(' . $student->gps_address . ')' : '' }}</dd></div>@endif
+                    </dl>
+                </div>
+            </div>
 
-                                @can('send-sms')
-                                <form method="POST" action="{{ route('students.send-grades', $student) }}" class="space-y-2">
-                                    @csrf
-                                    <select name="semester_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" required>
-                                        <option value="">Select semester to send</option>
-                                        @foreach($semesters as $semesterOption)
-                                            <option value="{{ $semesterOption->id }}">{{ $semesterOption->name }} - {{ $semesterOption->academicYear->name ?? '' }}</option>
-                                        @endforeach
-                                    </select>
-                                    <x-button type="submit" variant="secondary" class="w-full justify-center" icon="fas fa-sms">
-                                        {{ __('Send Grades to Parent') }}
-                                    </x-button>
-                                </form>
-                                @if(!$student->emergency_contact_phone)
-                                    <p class="text-xs text-amber-600">No emergency contact phone on file - add one to enable this.</p>
-                                @endif
-                                @endcan
-                            </div>
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Fees -->
+                @can('manage-fees')
+                    <div class="bg-white shadow-sm rounded-lg p-6 flex flex-wrap justify-between items-center gap-4">
+                        <div>
+                            <p class="text-sm text-gray-500">School fees owing</p>
+                            <p class="text-3xl font-bold {{ $balance > 0 ? 'text-red-600' : 'text-green-600' }}">GH₵ {{ number_format($balance, 2) }}</p>
+                            @if($balance < 0)<p class="text-xs text-blue-600">In credit</p>@endif
                         </div>
-                        
-                        <!-- Student Academic Info -->
-                        <div class="md:w-2/3 md:pl-6 mt-6 md:mt-0">
-                            <div class="mb-6">
-                                <h4 class="text-lg font-medium text-gray-900 mb-4">Academic Information</h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Programme</p>
-                                        <p class="font-medium">{{ $student->programme->name ?? 'Not Assigned' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Gender</p>
-                                        <p class="font-medium">{{ $student->gender ?? 'Not Specified' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Form</p>
-                                        <p class="font-medium">{{ $student->level ? \App\Support\FormLabel::label($student->level) : 'Not Specified' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Class</p>
-                                        <p class="font-medium">{{ $student->classGroup->name ?? 'Not Assigned' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Aggregate</p>
-                                        <p class="font-medium">{{ $student->calculateAggregate() ?? 'Pending' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Division</p>
-                                        <p class="font-medium">{{ $student->getGradeStanding() ?? 'Not Available' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">House</p>
-                                        <p class="font-medium">{{ $student->house->name ?? 'Not Assigned' }}</p>
-                                    </div>
-                                    <div class="bg-gray-50 p-4 rounded-lg">
-                                        <p class="text-sm text-gray-500">Boarding Status</p>
-                                        <p class="font-medium">
-                                            @if($student->boarding_status === 'boarder')
-                                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Boarder</span>
-                                            @elseif($student->boarding_status === 'day')
-                                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Day Student</span>
-                                            @else
-                                                Not Specified
-                                            @endif
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            @if($student->notes)
-                            <div class="mb-6">
-                                <h4 class="text-lg font-medium text-gray-900 mb-2">Notes</h4>
-                                <div class="bg-gray-50 p-4 rounded-lg">
-                                    <p class="text-sm text-gray-600">{{ $student->notes }}</p>
-                                </div>
-                            </div>
-                            @endif
-                            
-                            <!-- Recent Subjects -->
-                            <div>
-                                <div class="flex justify-between items-center mb-4">
-                                    <h4 class="text-lg font-medium text-gray-900">Recent Subjects</h4>
-                                    <a href="{{ route('students.results', $student) }}" class="text-sm text-primary-600 hover:text-primary-500">View All</a>
-                                </div>
+                        <div class="flex gap-2">
+                            <x-button href="{{ route('fees.show', $student) }}" icon="fas fa-cash-register">Receive Payment</x-button>
+                            <x-button href="{{ route('fees.print', $student) }}" variant="secondary" icon="fas fa-print" target="_blank">Statement</x-button>
+                        </div>
+                    </div>
+                @endcan
 
-                                @if(count($student->recentSubjects ?? []) > 0)
+                <!-- Terminal reports -->
+                <div class="bg-white shadow-sm rounded-lg p-6">
+                    <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
+                        <h3 class="font-semibold text-gray-900"><i class="fas fa-file-alt text-primary-600 mr-2"></i>Terminal Reports</h3>
+                        <div class="flex flex-wrap items-end gap-2">
+                            <form method="GET" action="{{ route('students.report-card', $student) }}" target="_blank" class="flex gap-2">
+                                <select name="semester_id" class="rounded-lg border-gray-300 text-sm">
+                                    @foreach($semesters as $t)
+                                        <option value="{{ $t->id }}" @selected($t->is_current)>{{ $t->full_name }}</option>
+                                    @endforeach
+                                </select>
+                                <x-button type="submit" size="sm" icon="fas fa-print">View / Print</x-button>
+                            </form>
+                            @can('send-sms')
+                                <form method="POST" action="{{ route('students.send-grades', $student) }}" class="flex gap-2" onsubmit="this.semester_id.value = this.previousElementSibling.semester_id.value">
+                                    @csrf
+                                    <input type="hidden" name="semester_id">
+                                    <x-button type="submit" size="sm" variant="secondary" icon="fas fa-sms" :disabled="!$student->emergency_contact_phone" title="Text the parent a link to this report">Text to parent</x-button>
+                                </form>
+                            @endcan
+                        </div>
+                    </div>
+
+                    @forelse($groupedResults as $year)
+                        @foreach($year['semesters'] as $termData)
+                            <div class="mb-4">
+                                <p class="text-sm font-semibold text-gray-700 mb-2">{{ $termData['semester']->name }} — {{ $year['academic_year']->name }}</p>
                                 <div class="overflow-x-auto">
-                                    <table class="min-w-full divide-y divide-gray-200">
+                                    <table class="min-w-full text-sm border">
                                         <thead class="bg-gray-50">
                                             <tr>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                    Subject
-                                                </th>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                    Code
-                                                </th>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                    Semester
-                                                </th>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                    Grade
-                                                </th>
+                                                <th class="px-3 py-2 text-left text-xs text-gray-500 uppercase">Subject</th>
+                                                <th class="px-3 py-2 text-center text-xs text-gray-500 uppercase">Class</th>
+                                                <th class="px-3 py-2 text-center text-xs text-gray-500 uppercase">Exam</th>
+                                                <th class="px-3 py-2 text-center text-xs text-gray-500 uppercase">Total</th>
+                                                <th class="px-3 py-2 text-center text-xs text-gray-500 uppercase">Grade</th>
+                                                <th class="px-3 py-2 text-left text-xs text-gray-500 uppercase">Remark</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="bg-white divide-y divide-gray-200">
-                                            @foreach($student->recentSubjects ?? [] as $subject)
-                                            <tr>
-                                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                    {{ $subject->name }}
-                                                </td>
-                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                                    {{ $subject->code }}
-                                                </td>
-                                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                                    {{ $subject->semester }}
-                                                </td>
-                                                <td class="px-4 py-3 whitespace-nowrap">
-                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                                                        @if($subject->grade >= 'A') bg-green-100 text-green-800
-                                                        @elseif($subject->grade >= 'B') bg-blue-100 text-blue-800
-                                                        @elseif($subject->grade >= 'C') bg-yellow-100 text-yellow-800
-                                                        @elseif($subject->grade >= 'D') bg-orange-100 text-orange-800
-                                                        @else bg-red-100 text-red-800 @endif">
-                                                        {{ $subject->grade }}
-                                                    </span>
-                                                </td>
-                                            </tr>
+                                        <tbody class="divide-y">
+                                            @foreach($termData['results'] as $result)
+                                                <tr>
+                                                    <td class="px-3 py-2">{{ $result->subject->title ?? '—' }}</td>
+                                                    <td class="px-3 py-2 text-center">{{ $result->class_score !== null ? (float) $result->class_score : '' }}</td>
+                                                    <td class="px-3 py-2 text-center">{{ $result->exam_score !== null ? (float) $result->exam_score : '' }}</td>
+                                                    <td class="px-3 py-2 text-center font-semibold">{{ (float) $result->score }}</td>
+                                                    <td class="px-3 py-2 text-center">{{ $result->grade }}</td>
+                                                    <td class="px-3 py-2">{{ $result->remark }}</td>
+                                                </tr>
                                             @endforeach
                                         </tbody>
                                     </table>
                                 </div>
-                                @else
-                                <div class="bg-gray-50 p-4 rounded-lg text-center">
-                                    <p class="text-sm text-gray-500">No subjects found for this student.</p>
-                                </div>
-                                @endif
                             </div>
-                        </div>
-                    </div>
+                        @endforeach
+                    @empty
+                        <p class="text-sm text-gray-500">No scores recorded yet.</p>
+                    @endforelse
                 </div>
-            </div>
-            
-            <!-- Action Buttons -->
-            <div class="flex flex-wrap gap-3 justify-end">
-                <x-button href="{{ route('results.create', ['student_id' => $student->id]) }}" variant="secondary" icon="fas fa-plus-circle">
-                    {{ __('Add Result') }}
-                </x-button>
-                <x-button href="{{ route('students.edit', $student) }}" variant="secondary" icon="fas fa-edit">
-                    {{ __('Edit Student') }}
-                </x-button>
-                @if(auth()->user()->role === 'admin')
-                    @php
-                        // Try to find a user with the same email as the student
-                        $userByEmail = null;
-                        if ($student->email) {
-                            $userByEmail = \App\Models\User::where('email', $student->email)->first();
-                        }
-                    @endphp
-                    
-                    @if($userByEmail)
-                        <x-button href="{{ route('users.reset-password', $userByEmail) }}" variant="secondary" icon="fas fa-key">
-                            {{ __('Reset Password') }}
-                        </x-button>
-                    @else
-                        <!-- Show a disabled button with tooltip if no user account exists -->
-                        <span title="No user account found for this student">
-                            <x-button disabled variant="secondary" icon="fas fa-key">
-                                {{ __('No User Account') }}
-                            </x-button>
-                        </span>
-                    @endif
-                @endif
-                <form method="POST" action="{{ route('students.destroy', $student) }}" class="inline" onsubmit="return confirm('Are you sure you want to delete this student?');">
-                    @csrf
-                    @method('DELETE')
-                    <x-button type="submit" variant="danger" icon="fas fa-trash">
-                        {{ __('Delete Student') }}
-                    </x-button>
-                </form>
+
+                <div class="flex justify-end">
+                    <form method="POST" action="{{ route('students.destroy', $student) }}" onsubmit="return confirm('Permanently delete this pupil with all their scores and fee records? To keep records, set status to Withdrawn instead.');">
+                        @csrf @method('DELETE')
+                        <x-button type="submit" variant="outline-danger" size="sm" icon="fas fa-trash">Delete pupil</x-button>
+                    </form>
+                </div>
             </div>
         </div>
     </div>

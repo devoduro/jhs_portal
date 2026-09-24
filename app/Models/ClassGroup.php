@@ -20,6 +20,12 @@ class ClassGroup extends Model
         'programme_id',
         'level',
         'name',
+        'class_teacher_id',
+    ];
+
+    protected $casts = [
+        'level' => 'integer',
+        'class_teacher_id' => 'integer',
     ];
 
     /**
@@ -28,6 +34,20 @@ class ClassGroup extends Model
     public function programme(): BelongsTo
     {
         return $this->belongsTo(Programme::class);
+    }
+
+    /**
+     * The teacher in charge of this class (enters attendance, conduct and remarks for the
+     * terminal report).
+     */
+    public function classTeacher(): BelongsTo
+    {
+        return $this->belongsTo(Teacher::class, 'class_teacher_id');
+    }
+
+    public function levelLabel(): string
+    {
+        return \App\Support\FormLabel::label($this->level);
     }
 
     /**

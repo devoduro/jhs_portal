@@ -18,6 +18,7 @@ class GradeScheme extends Model
     protected $fillable = [
         'name',
         'description',
+        'section',
         'is_default',
     ];
     
@@ -87,19 +88,74 @@ class GradeScheme extends Model
         return $defaultScheme ? $defaultScheme->getGradePointForScore($score) : null;
     }
     
-    public static function getRemark(float $score): ?string
+    public static function getRemark(float $score, ?int $level = null): ?string
     {
-        // For now, just return a simple remark based on score
-        if ($score >= 70) return 'Excellent';
-        if ($score >= 60) return 'Very Good';
-        if ($score >= 50) return 'Good';
-        if ($score >= 40) return 'Fair';
-        return 'Poor';
+        $scheme = self::forLevel($level);
+        $band = $scheme?->bandForScore($score);
+
+        if ($band && $band->remark) {
+            return $band->remark;
+        }
+
+        if ($score >= 80) return 'Excellent';
+        if ($score >= 70) return 'Very Good';
+        if ($score >= 60) return 'Good';
+        if ($score >= 50) return 'Credit';
+        if ($score >= 40) return 'Pass';
+        return 'Weak';
     }
-    
+
     /**
-     * Get the score for a given letter grade.
+     * The grading scheme for a class level: the scheme assigned to that level's section
+     * (pre-school / primary / JHS), falling back to the default scheme.
      */
+    public static function forLevel(?int $level): ?self
+    {
+        static $cache = [];
+
+        $section = \App\Support\FormLabel::section($level) ?? 'default';
+
+        if (!array_key_exists($section, $cache)) {
+            $scheme = $section !== 'default'
+                ? static::with('grades')->where('section', $section)->first()
+                : null;
+
+            if (!$scheme && $section === \App\Support\FormLabel::SECTION_PRESCHOOL) {
+                $scheme = static::with('grades')->where('section', \App\Support\FormLabel::SECTION_PRIMARY)->first();
+            }
+
+            $cache[$section] = $scheme ?? static::with('grades')->where('is_default', true)->first();
+        }
+
+        return $cache[$section];
+    }
+
+    /**
+     * The grade band a score falls in (highest band whose minimum the score reaches).
+     */
+    public function bandForScore(float $score): ?Grade
+    {
+        return $this->grades
+            ->sortByDesc('min_score')
+            ->first(fn (Grade $grade) => $score >= (float) $grade->min_score);
+    }
+
+    /**
+     * Grade, grade value and remark for a score at a given class level, in one lookup.
+     *
+     * @return array{grade: ?string, grade_point: ?float, remark: ?string}
+     */
+    public static function gradeFor(float $score, ?int $level): array
+    {
+        $band = self::forLevel($level)?->bandForScore($score);
+
+        return [
+            'grade' => $band?->grade,
+            'grade_point' => $band ? (float) $band->grade_value : null,
+            'remark' => $band?->remark ?? self::getRemark($score),
+        ];
+    }
+
     public function getScoreFromGrade(string $grade): ?float
     {
         $gradeRecord = $this->grades()

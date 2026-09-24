@@ -2,36 +2,46 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\FeesReportExport;
 use App\Exports\StudentFeesExport;
-use App\Models\AcademicYear;
-use App\Models\FeeStructure;
-use App\Models\Programme;
+use App\Models\ClassGroup;
+use App\Models\FeeCategory;
+use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentArrear;
 use App\Models\StudentFeeCharge;
 use App\Models\StudentPayment;
 use App\Services\FeeLedgerService;
+use App\Services\SmsReceiptService;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Maatwebsite\Excel\Facades\Excel;
 use PDF;
 
+/**
+ * Fee collection: the pupils' fee list for a term, each pupil's ledger (record payments,
+ * print receipts and statements), and the term collection report.
+ */
 class StudentPaymentController extends Controller
 {
-    /**
-     * Display a listing of students with their fee status for a selected academic year.
-     */
     public function index(Request $request)
     {
-        [$academicYear, $rows] = $this->buildFeeRows($request);
+        [$term, $rows] = $this->buildFeeRows($request);
 
-        $academicYears = AcademicYear::chronological()->get();
-        $programmes = Programme::orderBy('name')->get();
-        $levels = Student::whereNotNull('level')->distinct()->orderBy('level')->pluck('level');
+        $terms = $this->terms();
+        $classGroups = ClassGroup::orderBy('level')->orderBy('name')->get();
 
-        $perPage = 20;
+        $summary = [
+            'billed' => $rows->sum('term_bill'),
+            'paid' => $rows->sum('term_paid'),
+            'outstanding' => $rows->sum(fn ($r) => max($r['balance'], 0)),
+            'debtors' => $rows->where('status', 'debtor')->count(),
+        ];
+
+        $perPage = 25;
         $page = LengthAwarePaginator::resolveCurrentPage();
 
         $students = new LengthAwarePaginator(
@@ -42,567 +52,383 @@ class StudentPaymentController extends Controller
             ['path' => $request->url(), 'query' => $request->except('page')]
         );
 
-        return view('fees.payments.index', compact('students', 'academicYear', 'academicYears', 'programmes', 'levels'));
+        return view('fees.payments.index', compact('students', 'term', 'terms', 'classGroups', 'summary'));
     }
 
-    /**
-     * Export the current filtered fee list to Excel.
-     */
     public function exportExcel(Request $request)
     {
-        [$academicYear, $rows] = $this->buildFeeRows($request);
+        [$term, $rows] = $this->buildFeeRows($request);
 
-        $filename = 'student-fees' . ($academicYear ? '-' . str_replace('/', '-', $academicYear->name) : '') . '.xlsx';
-
-        return Excel::download(new StudentFeesExport($rows), $filename);
+        return Excel::download(new StudentFeesExport($rows), 'pupil-fees' . ($term ? '-' . \Illuminate\Support\Str::slug($term->full_name) : '') . '.xlsx');
     }
 
-    /**
-     * Export the current filtered fee list to PDF.
-     */
     public function exportPdf(Request $request)
     {
-        [$academicYear, $rows] = $this->buildFeeRows($request);
+        [$term, $rows] = $this->buildFeeRows($request);
+        $classGroup = $request->filled('class_group_id') ? ClassGroup::find($request->class_group_id) : null;
 
-        $filename = 'student-fees' . ($academicYear ? '-' . str_replace('/', '-', $academicYear->name) : '') . '.pdf';
+        $pdf = PDF::loadView('fees.payments.export-pdf', compact('rows', 'term', 'classGroup'))->setPaper('a4', 'landscape');
 
-        $pdf = PDF::loadView('fees.payments.export-pdf', compact('rows', 'academicYear'))->setPaper('a4', 'landscape');
-
-        return $pdf->download($filename);
+        return $pdf->download('pupil-fees' . ($term ? '-' . \Illuminate\Support\Str::slug($term->full_name) : '') . '.pdf');
     }
 
     /**
-     * Build the filtered, balance-annotated student fee rows shared by the on-screen
-     * list and both exports. Balance is unclamped (fee due minus paid) so an overpayment
-     * shows as negative - a creditor - rather than flooring at zero.
+     * Rows for the fee list: per pupil, the balance brought forward into the term, the term's
+     * bill, what was paid against the term, and the overall balance now. Computed with grouped
+     * queries (one per table), never per pupil.
      *
-     * @return array{0: ?AcademicYear, 1: \Illuminate\Support\Collection}
+     * @return array{0: ?Semester, 1: Collection}
      */
     protected function buildFeeRows(Request $request): array
     {
-        $academicYear = $request->filled('academic_year_id')
-            ? AcademicYear::find($request->academic_year_id)
-            : AcademicYear::where('is_current', true)->first();
+        $term = $this->selectedTerm($request);
 
-        $query = Student::with('programme');
+        $query = Student::with('classGroup')->where('status', $request->input('pupil_status', 'active'));
 
         if ($request->filled('search')) {
-            $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('full_name', 'like', "%{$searchTerm}%")
-                    ->orWhere('index_number', 'like', "%{$searchTerm}%");
-            });
+            $search = $request->search;
+            $query->where(fn ($q) => $q->where('full_name', 'like', "%{$search}%")->orWhere('index_number', 'like', "%{$search}%"));
         }
 
-        if ($request->filled('programme_id')) {
-            $query->where('programme_id', $request->programme_id);
+        if ($request->filled('class_group_id')) {
+            $query->where('class_group_id', $request->class_group_id);
         }
 
         if ($request->filled('level')) {
             $query->where('level', $request->level);
         }
 
-        $students = $query->orderBy('full_name')->get();
-        $studentIds = $students->pluck('id');
+        $students = $query->orderBy('level')->orderBy('full_name')->get();
+        $ids = $students->pluck('id');
 
-        // Tuition category specifically - a programme/level can also have graduation/resit fee
-        // structures now, which must never be picked up here (they're separate one-off charges,
-        // not part of the headline "Fee Amount" shown on this list).
-        $feeStructures = $academicYear
-            ? FeeStructure::where('academic_year_id', $academicYear->id)->where('category', 'tuition')->get()
-            : collect();
-
-        $paymentSums = $academicYear
-            ? StudentPayment::where('academic_year_id', $academicYear->id)
-                ->whereIn('student_id', $studentIds)
-                ->selectRaw('student_id, SUM(amount) as total')
-                ->groupBy('student_id')
-                ->pluck('total', 'student_id')
-            : collect();
-
-        // Additional tuition-category charges (e.g. a fee correction uploaded via the fee
-        // charges tool) fold into "Fee Amount" alongside the base structure; graduation/resit/
-        // other categories deliberately don't, matching Student::tuitionFeeAmount().
-        $tuitionChargeSums = $academicYear
-            ? StudentFeeCharge::where('academic_year_id', $academicYear->id)
-                ->where('category', 'tuition')
-                ->whereIn('student_id', $studentIds)
-                ->selectRaw('student_id, SUM(amount) as total')
-                ->groupBy('student_id')
-                ->pluck('total', 'student_id')
-            : collect();
-
-        $arrearSums = StudentArrear::whereIn('student_id', $studentIds)
+        $sum = fn ($model, $column = null, $value = null) => $model::whereIn('student_id', $ids)
+            ->when($column, fn ($q) => $q->where($column, $value))
             ->selectRaw('student_id, SUM(amount) as total')
             ->groupBy('student_id')
             ->pluck('total', 'student_id');
 
-        $rows = $students->map(function (Student $student) use ($academicYear, $feeStructures, $paymentSums, $tuitionChargeSums, $arrearSums) {
-            $structure = null;
-            $paid = 0.0;
-            $balance = 0.0;
-            $percentage = 0.0;
-            $feeAmount = null;
-            $arrears = (float) ($arrearSums[$student->id] ?? 0);
+        $allCharges = $sum(StudentFeeCharge::class);
+        $allPayments = $sum(StudentPayment::class);
+        $allArrears = $sum(StudentArrear::class);
+        $termCharges = $term ? $sum(StudentFeeCharge::class, 'semester_id', $term->id) : collect();
+        $termPayments = $term ? $sum(StudentPayment::class, 'semester_id', $term->id) : collect();
 
-            if ($academicYear) {
-                $structure = $feeStructures->first(fn (FeeStructure $f) => (int) $f->programme_id === (int) $student->programme_id && (int) $f->level === (int) $student->level)
-                    ?? $feeStructures->first(fn (FeeStructure $f) => (int) $f->programme_id === (int) $student->programme_id && $f->level === null);
-
-                $paid = (float) ($paymentSums[$student->id] ?? 0);
-                $chargesAmount = (float) ($tuitionChargeSums[$student->id] ?? 0);
-                $structureAmount = $structure ? (float) $structure->amount : 0.0;
-                $hasFeeInfo = $structure || $chargesAmount > 0;
-                $rawBill = $structureAmount + $chargesAmount;
-
-                // "Fee Amount" nets out arrears (a prior credit reduces it, a prior debt tops it
-                // up) so it reads as the actual amount due this year, not just the raw tuition
-                // bill sitting next to an unrelated-looking arrears figure.
-                $netFeeAmount = $rawBill + $arrears;
-                $feeAmount = $hasFeeInfo ? $netFeeAmount : null;
-
-                // Balance is fee due (net of arrears) minus what's been paid - unchanged in
-                // value from before, just expressed via the netted fee amount above.
-                $balance = $netFeeAmount - $paid;
-                $percentage = $hasFeeInfo
-                    ? ($netFeeAmount > 0 ? round(($paid / $netFeeAmount) * 100, 1) : 100.0)
-                    : 0.0;
-            }
+        $rows = $students->map(function (Student $student) use ($allCharges, $allPayments, $allArrears, $termCharges, $termPayments) {
+            $id = $student->id;
+            $balance = (float) ($allCharges[$id] ?? 0) + (float) ($allArrears[$id] ?? 0) - (float) ($allPayments[$id] ?? 0);
+            $termBill = (float) ($termCharges[$id] ?? 0);
+            $termPaid = (float) ($termPayments[$id] ?? 0);
 
             return [
                 'student' => $student,
-                'fee_amount' => $feeAmount,
-                'paid' => $paid,
+                'brought_forward' => $balance - ($termBill - $termPaid),
+                'term_bill' => $termBill,
+                'term_paid' => $termPaid,
                 'balance' => $balance,
-                'percentage' => $percentage,
-                'arrears' => $arrears,
-                'status' => $balance < 0 ? 'creditor' : ($balance > 0 ? 'debtor' : 'settled'),
+                'status' => $balance > 0.009 ? 'debtor' : ($balance < -0.009 ? 'creditor' : 'settled'),
             ];
         });
 
         if ($request->filled('status')) {
-            if ($request->status === 'creditors') {
-                $rows = $rows->filter(fn (array $r) => $r['status'] === 'creditor');
-            } elseif ($request->status === 'debtors') {
-                $rows = $rows->filter(fn (array $r) => $r['status'] === 'debtor');
-            }
+            $wanted = rtrim($request->status, 's');
+            $rows = $rows->filter(fn (array $r) => $r['status'] === $wanted);
         }
 
-        return [$academicYear, $rows->values()];
+        if ($request->input('sort') === 'balance') {
+            $rows = $rows->sortByDesc('balance');
+        }
+
+        return [$term, $rows->values()];
     }
 
     /**
-     * Show a student's payment ledger and fee status for a selected academic year.
+     * A pupil's fee account: summary for the selected term, the record-payment form and the
+     * full statement.
      */
     public function show(Request $request, Student $student)
     {
-        $academicYear = $request->filled('academic_year_id')
-            ? AcademicYear::find($request->academic_year_id)
-            : AcademicYear::where('is_current', true)->first();
+        $student->load('classGroup');
+        $terms = $this->terms();
+        $term = $this->selectedTerm($request);
 
-        $academicYears = AcademicYear::chronological()->get();
-
-        $feeStructure = $academicYear ? $student->applicableFeeStructure($academicYear) : null;
-        // The base structure amount plus any tuition-category charges billed on top of it -
-        // the same figure shown as "Fee Amount" on the /fees list, kept consistent here.
-        $feeAmount = $academicYear ? $student->tuitionFeeAmount($academicYear) : 0.0;
-        $totalPaid = $academicYear ? $student->totalPaid($academicYear) : 0;
-        $percentage = $academicYear ? $student->paymentPercentage($academicYear) : 0;
-        $totalArrears = $student->totalArrears();
+        $termItems = $term
+            ? $student->feeCharges()->where('semester_id', $term->id)->get()
+            : collect();
+        $termBill = (float) $termItems->sum('amount');
+        $termPaid = $term ? $student->paidAmount(null, $term) : 0.0;
 
         $ledger = FeeLedgerService::ledgerFor($student);
-
-        // Sourced from the ledger itself (not recomputed independently) so this figure can
-        // never drift from the transaction math shown in the statement below.
         $balanceDue = $ledger[0]['balance'] ?? 0.0;
+        $broughtForward = $balanceDue - ($termBill - $termPaid);
+
+        // Fee items set for the pupil's class this term that haven't been billed to them yet.
+        $unbilledItems = $term
+            ? $student->applicableFeeItems($term)->reject(fn ($item) => $termItems->contains('category', $item->category))
+            : collect();
 
         return view('fees.payments.show', compact(
-            'student',
-            'academicYear',
-            'academicYears',
-            'feeStructure',
-            'feeAmount',
-            'totalPaid',
-            'percentage',
-            'totalArrears',
-            'ledger',
-            'balanceDue'
+            'student', 'terms', 'term', 'termItems', 'termBill', 'termPaid',
+            'ledger', 'balanceDue', 'broughtForward', 'unbilledItems'
         ));
     }
 
     /**
-     * Printable statement of account (full ledger) for a student - a standalone
-     * letterhead document, independent of the academic year currently selected on screen.
+     * Printable statement of account, oldest transaction first.
      */
     public function printLedger(Student $student)
     {
+        $student->load('classGroup');
         $ledger = FeeLedgerService::ledgerFor($student);
-
-        // ledgerFor() returns newest-first (for the on-screen statement); the printed
-        // statement reads top-to-bottom oldest-first instead, so the balance builds down
-        // the page and the most recent transaction lands at the bottom, not the top.
         $balanceDue = $ledger[0]['balance'] ?? 0.0;
         $ledger = array_reverse($ledger);
 
-        $settings = \Illuminate\Support\Facades\DB::table('settings')->where('category', 'institution')->pluck('value', 'key')->toArray();
+        $settings = $this->institutionSettings();
 
         return view('fees.payments.print-ledger', compact('student', 'ledger', 'balanceDue', 'settings'));
     }
 
     /**
-     * Record a new payment for a student.
+     * Printable payment receipt (two copies on one A4 page: pupil's copy and office copy).
      */
+    public function receipt(StudentPayment $payment)
+    {
+        $payment->load(['student.classGroup', 'semester.academicYear', 'recordedBy']);
+        $student = $payment->student;
+
+        // Balance straight after this payment: everything on the ledger up to and including it.
+        $balanceAfter = collect(FeeLedgerService::ledgerFor($student))
+            ->firstWhere('payment_id', $payment->id)['balance'] ?? $student->outstandingBalance();
+
+        $settings = $this->institutionSettings();
+
+        return view('fees.payments.receipt', compact('payment', 'student', 'balanceAfter', 'settings'));
+    }
+
     public function store(Request $request, Student $student)
     {
-        $validator = Validator::make($request->all(), [
-            'academic_year_id' => 'required|exists:academic_years,id',
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|in:cash,mobile_money,bank_transfer,cheque,other',
-            'bank' => 'nullable|string|max:255',
-            'payment_date' => 'required|date',
-            'reference_number' => 'nullable|string|max:255',
-            'notes' => 'nullable|string',
-        ]);
+        $data = $this->validatePayment($request);
 
-        if ($validator->fails()) {
-            return back()->withErrors($validator)->withInput();
+        if ($data instanceof \Illuminate\Http\RedirectResponse) {
+            return $data;
         }
 
-        $student->payments()->create([
-            'academic_year_id' => $request->academic_year_id,
-            'amount' => $request->amount,
-            'payment_method' => $request->payment_method,
-            'bank' => $request->bank,
-            'payment_date' => $request->payment_date,
-            'reference_number' => $request->reference_number,
-            'notes' => $request->notes,
+        $term = Semester::find($data['semester_id']);
+
+        $payment = $student->payments()->create($data + [
+            'academic_year_id' => $term->academic_year_id,
             'recorded_by' => auth()->id(),
         ]);
 
-        return redirect()->route('fees.show', ['student' => $student->id, 'academic_year_id' => $request->academic_year_id])
-            ->with('success', 'Payment recorded successfully.');
+        $message = 'Payment of GH₵ ' . number_format($payment->amount, 2) . ' recorded. Receipt ' . $payment->fresh()->receipt_number . '.';
+
+        if ($request->boolean('send_sms')) {
+            $sent = app(SmsReceiptService::class)->send($payment->fresh());
+            $message .= $sent ? ' SMS receipt sent to parent.' : ' (SMS receipt could not be sent - check the parent\'s phone number and SMS settings.)';
+        }
+
+        return redirect()->route('fees.show', ['student' => $student->id, 'semester_id' => $term->id])
+            ->with('success', $message)
+            ->with('receipt_url', route('fees.receipt', $payment));
     }
 
-    /**
-     * Aggregate fees report: expected vs collected fees by programme and level
-     * for a selected academic year, for admin/accountant oversight.
-     */
-    public function report(Request $request)
+    public function update(Request $request, StudentPayment $payment)
     {
-        $academicYear = $request->filled('academic_year_id')
-            ? AcademicYear::find($request->academic_year_id)
-            : AcademicYear::where('is_current', true)->first();
+        $data = $this->validatePayment($request, 'edit_payment_' . $payment->id);
 
-        $academicYears = AcademicYear::chronological()->get();
-        $programmes = Programme::orderBy('name')->get();
+        if ($data instanceof \Illuminate\Http\RedirectResponse) {
+            return $data;
+        }
 
-        $programmeId = $request->filled('programme_id') ? (int) $request->programme_id : null;
-        $level = $request->filled('level') ? (int) $request->level : null;
-        $category = $request->input('category', 'tuition');
+        $term = Semester::find($data['semester_id']);
+        $payment->update($data + ['academic_year_id' => $term->academic_year_id]);
 
-        [$rows, $grandExpected, $grandCollected] = $this->buildReportRows($academicYear, $programmeId, $level, $category);
-        $metrics = $this->buildReportMetrics($academicYear, $programmeId, $level);
-
-        return view('fees.report', compact(
-            'academicYear', 'academicYears', 'programmes', 'programmeId', 'level', 'category',
-            'rows', 'grandExpected', 'grandCollected', 'metrics'
-        ));
+        return redirect()->route('fees.show', ['student' => $payment->student_id, 'semester_id' => $term->id])
+            ->with('success', 'Payment ' . $payment->receipt_number . ' updated.');
     }
 
-    /**
-     * Printable version of the fees report (standalone letterhead document).
-     */
-    public function printReport(Request $request)
-    {
-        $academicYear = $request->filled('academic_year_id')
-            ? AcademicYear::find($request->academic_year_id)
-            : AcademicYear::where('is_current', true)->first();
-
-        abort_unless($academicYear, 404, 'No academic year selected to print.');
-
-        $programmeId = $request->filled('programme_id') ? (int) $request->programme_id : null;
-        $level = $request->filled('level') ? (int) $request->level : null;
-        $category = $request->input('category', 'tuition');
-
-        [$rows, $grandExpected, $grandCollected] = $this->buildReportRows($academicYear, $programmeId, $level, $category);
-        $metrics = $this->buildReportMetrics($academicYear, $programmeId, $level);
-
-        $programmeName = $programmeId ? Programme::find($programmeId)?->name : null;
-        $settings = \Illuminate\Support\Facades\DB::table('settings')->where('category', 'institution')->pluck('value', 'key')->toArray();
-
-        return view('fees.report-print', compact(
-            'academicYear', 'rows', 'grandExpected', 'grandCollected', 'settings',
-            'metrics', 'programmeName', 'level', 'category'
-        ));
-    }
-
-    /**
-     * Export the current filtered report breakdown to Excel.
-     */
-    public function exportReport(Request $request)
-    {
-        $academicYear = $request->filled('academic_year_id')
-            ? AcademicYear::find($request->academic_year_id)
-            : AcademicYear::where('is_current', true)->first();
-
-        $programmeId = $request->filled('programme_id') ? (int) $request->programme_id : null;
-        $level = $request->filled('level') ? (int) $request->level : null;
-        $category = $request->input('category', 'tuition');
-
-        [$rows] = $this->buildReportRows($academicYear, $programmeId, $level, $category);
-
-        $filename = 'fees-report' . ($academicYear ? '-' . str_replace('/', '-', $academicYear->name) : '') . '.xlsx';
-
-        return Excel::download(new \App\Exports\FeesReportExport($rows), $filename);
-    }
-
-    /**
-     * Build the programme/level breakdown rows (+ grand totals) for a fees report,
-     * shared by the on-screen report, its printable version, and Excel export.
-     *
-     * "Collected" always means all payments recorded for the year, regardless of $category -
-     * payments in this app are never tagged to a specific fee category, so this matches the
-     * same all-payments assumption used everywhere else (e.g. Student::feeBalance()). Only
-     * "Expected"/"Fee Amount" change meaning based on $category, since that's what determines
-     * which FeeStructure/StudentFeeCharge rows count as billed.
-     *
-     * @return array{0: \Illuminate\Support\Collection, 1: float, 2: float}
-     */
-    protected function buildReportRows(?AcademicYear $academicYear, ?int $programmeId = null, ?int $filterLevel = null, string $category = 'tuition'): array
-    {
-        $rows = collect();
-        $grandExpected = 0.0;
-        $grandCollected = 0.0;
-
-        if (!$academicYear) {
-            return [$rows, $grandExpected, $grandCollected];
-        }
-
-        $programmesQuery = Programme::orderBy('name');
-        if ($programmeId) {
-            $programmesQuery->where('id', $programmeId);
-        }
-        $programmes = $programmesQuery->get();
-
-        // Same category-blind bug fixed earlier in buildFeeRows() for the /fees list - this
-        // report had its own copy of it, defaulting to 'tuition' but now filterable.
-        $structures = FeeStructure::where('academic_year_id', $academicYear->id)
-            ->where('category', $category)
-            ->get();
-
-        // Additional same-category charges fold into "Fee Amount" here too, matching
-        // Student::tuitionFeeAmount() and the /fees list (for the 'tuition' category).
-        $chargeSums = StudentFeeCharge::where('academic_year_id', $academicYear->id)
-            ->where('category', $category)
-            ->selectRaw('student_id, SUM(amount) as total')
-            ->groupBy('student_id')
-            ->pluck('total', 'student_id');
-
-        foreach ($programmes as $programme) {
-            $levelsQuery = Student::where('programme_id', $programme->id)->whereNotNull('level');
-            if ($filterLevel) {
-                $levelsQuery->where('level', $filterLevel);
-            }
-            $levels = $levelsQuery->distinct()->orderBy('level')->pluck('level');
-
-            foreach ($levels as $level) {
-                $studentIds = Student::where('programme_id', $programme->id)
-                    ->where('level', $level)
-                    ->pluck('id');
-
-                if ($studentIds->isEmpty()) {
-                    continue;
-                }
-
-                $feeStructure = $structures->first(fn (FeeStructure $s) => (int) $s->programme_id === (int) $programme->id && (int) $s->level === (int) $level)
-                    ?? $structures->first(fn (FeeStructure $s) => (int) $s->programme_id === (int) $programme->id && $s->level === null);
-
-                $studentCount = $studentIds->count();
-                $structureAmount = $feeStructure ? (float) $feeStructure->amount : 0.0;
-                $chargesAmount = $studentIds->sum(fn ($id) => (float) ($chargeSums[$id] ?? 0));
-                $expected = ($structureAmount * $studentCount) + $chargesAmount;
-                $collected = (float) StudentPayment::whereIn('student_id', $studentIds)
-                    ->where('academic_year_id', $academicYear->id)
-                    ->sum('amount');
-
-                $rows->push([
-                    'programme' => $programme->name,
-                    'level' => $level,
-                    'students' => $studentCount,
-                    'fee_amount' => $feeStructure?->amount,
-                    'expected' => $expected,
-                    'collected' => $collected,
-                    'balance' => $expected - $collected,
-                    'percentage' => $expected > 0 ? round(($collected / $expected) * 100, 1) : 0,
-                ]);
-
-                $grandExpected += $expected;
-                $grandCollected += $collected;
-            }
-        }
-
-        return [$rows, $grandExpected, $grandCollected];
-    }
-
-    /**
-     * Build the extra summary metrics shown above the report table: debtor/creditor/settled
-     * counts, collection rate, net arrears, and the two trend charts. Always tuition-scoped
-     * (the same student-standing definition used app-wide, e.g. on the accountant dashboard),
-     * independent of the $category the table above is filtered to - "how many students owe
-     * money overall" doesn't change meaning based on which fee category is being browsed.
-     *
-     * Computed via grouped bulk queries plus a single pass over the (already filtered, so
-     * typically small) student set - never a per-student query in a loop.
-     */
-    protected function buildReportMetrics(?AcademicYear $academicYear, ?int $programmeId, ?int $filterLevel): array
-    {
-        $empty = [
-            'debtorCount' => 0,
-            'creditorCount' => 0,
-            'settledCount' => 0,
-            'collectionRate' => 0.0,
-            'netArrears' => 0.0,
-            'monthlyCollections' => collect(),
-            'paymentMethodBreakdown' => collect(),
-        ];
-
-        if (!$academicYear) {
-            return $empty;
-        }
-
-        $studentsQuery = Student::where('status', 'active')->whereNotNull('programme_id');
-        if ($programmeId) {
-            $studentsQuery->where('programme_id', $programmeId);
-        }
-        if ($filterLevel) {
-            $studentsQuery->where('level', $filterLevel);
-        }
-        $students = $studentsQuery->get(['id', 'programme_id', 'level']);
-        $studentIds = $students->pluck('id');
-
-        $tuitionStructures = FeeStructure::where('academic_year_id', $academicYear->id)
-            ->where('category', 'tuition')
-            ->get();
-
-        $paymentSums = StudentPayment::where('academic_year_id', $academicYear->id)
-            ->whereIn('student_id', $studentIds)
-            ->selectRaw('student_id, SUM(amount) as total')
-            ->groupBy('student_id')
-            ->pluck('total', 'student_id');
-
-        $tuitionChargeSums = StudentFeeCharge::where('academic_year_id', $academicYear->id)
-            ->where('category', 'tuition')
-            ->whereIn('student_id', $studentIds)
-            ->selectRaw('student_id, SUM(amount) as total')
-            ->groupBy('student_id')
-            ->pluck('total', 'student_id');
-
-        $arrearSums = StudentArrear::whereIn('student_id', $studentIds)
-            ->selectRaw('student_id, SUM(amount) as total')
-            ->groupBy('student_id')
-            ->pluck('total', 'student_id');
-
-        $debtorCount = 0;
-        $creditorCount = 0;
-        $settledCount = 0;
-        $totalBilled = 0.0;
-        $totalCollected = 0.0;
-        $netArrears = 0.0;
-
-        foreach ($students as $student) {
-            $structure = $tuitionStructures->first(fn (FeeStructure $s) => (int) $s->programme_id === (int) $student->programme_id && (int) $s->level === (int) $student->level)
-                ?? $tuitionStructures->first(fn (FeeStructure $s) => (int) $s->programme_id === (int) $student->programme_id && $s->level === null);
-
-            $feeAmount = ($structure ? (float) $structure->amount : 0.0) + (float) ($tuitionChargeSums[$student->id] ?? 0);
-            $paid = (float) ($paymentSums[$student->id] ?? 0);
-            $arrears = (float) ($arrearSums[$student->id] ?? 0);
-            $balance = $feeAmount + $arrears - $paid;
-
-            $totalBilled += $feeAmount;
-            $totalCollected += $paid;
-            $netArrears += $arrears;
-
-            if ($balance > 0.01) {
-                $debtorCount++;
-            } elseif ($balance < -0.01) {
-                $creditorCount++;
-            } else {
-                $settledCount++;
-            }
-        }
-
-        $collectionRate = $totalBilled > 0 ? round(($totalCollected / $totalBilled) * 100, 1) : 0.0;
-
-        $paymentsQuery = StudentPayment::where('academic_year_id', $academicYear->id)->whereIn('student_id', $studentIds);
-
-        $paymentMethodBreakdown = (clone $paymentsQuery)
-            ->selectRaw('payment_method, SUM(amount) as total')
-            ->groupBy('payment_method')
-            ->pluck('total', 'payment_method');
-
-        $monthlyCollections = (clone $paymentsQuery)
-            ->selectRaw("DATE_FORMAT(payment_date, '%Y-%m') as ym, SUM(amount) as total")
-            ->groupBy('ym')
-            ->orderBy('ym')
-            ->get()
-            ->map(fn ($row) => [
-                'month' => \Carbon\Carbon::parse($row->ym . '-01')->format('M Y'),
-                'total' => (float) $row->total,
-            ]);
-
-        return [
-            'debtorCount' => $debtorCount,
-            'creditorCount' => $creditorCount,
-            'settledCount' => $settledCount,
-            'collectionRate' => $collectionRate,
-            'netArrears' => $netArrears,
-            'monthlyCollections' => $monthlyCollections,
-            'paymentMethodBreakdown' => $paymentMethodBreakdown,
-        ];
-    }
-
-    /**
-     * Remove a mis-entered payment record.
-     */
     public function destroy(StudentPayment $payment)
     {
         $payment->delete();
 
-        // back() rather than a hardcoded route - this same endpoint is used from both the
-        // per-student ledger and the bulk payments list, and each wants to stay on its own page.
-        return back()->with('success', 'Payment removed successfully.');
+        return back()->with('success', 'Payment ' . $payment->receipt_number . ' removed.');
     }
 
     /**
-     * Update an existing payment record.
+     * Text a balance reminder to the parents of the ticked pupils on the fee list.
      */
-    public function update(Request $request, StudentPayment $payment)
+    public function sendReminders(Request $request, SmsReceiptService $sms)
+    {
+        abort_unless($request->user()->can('send-sms'), 403);
+
+        $request->validate(['student_ids' => 'required|array', 'student_ids.*' => 'exists:students,id']);
+
+        $sent = 0;
+        $students = Student::whereIn('id', $request->student_ids)->get();
+
+        foreach ($students as $student) {
+            if ($sms->sendReminder($student)) {
+                $sent++;
+            }
+        }
+
+        $skipped = $students->count() - $sent;
+
+        return back()->with($sent ? 'success' : 'error', "Reminder sent to {$sent} parent(s)." . ($skipped ? " {$skipped} not sent (no phone number, nothing owed, or SMS failed)." : ''));
+    }
+
+    private function validatePayment(Request $request, string $errorBag = 'default')
     {
         $validator = Validator::make($request->all(), [
-            'academic_year_id' => 'required|exists:academic_years,id',
+            'semester_id' => 'required|exists:semesters,id',
             'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|in:cash,mobile_money,bank_transfer,cheque,other',
+            'payment_method' => 'required|in:' . implode(',', array_keys(StudentPayment::METHODS)),
             'bank' => 'nullable|string|max:255',
-            'payment_date' => 'required|date',
+            'payment_date' => 'required|date|before_or_equal:today',
             'reference_number' => 'nullable|string|max:255',
-            'notes' => 'nullable|string',
+            'paid_by' => 'nullable|string|max:255',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         if ($validator->fails()) {
-            return back()->withErrors($validator, 'edit_payment_' . $payment->id)->withInput();
+            return back()->withErrors($validator, $errorBag)->withInput();
         }
 
-        $payment->update([
-            'academic_year_id' => $request->academic_year_id,
-            'amount' => $request->amount,
-            'payment_method' => $request->payment_method,
-            'bank' => $request->bank,
-            'payment_date' => $request->payment_date,
-            'reference_number' => $request->reference_number,
-            'notes' => $request->notes,
-        ]);
+        return $validator->safe()->only(['semester_id', 'amount', 'payment_method', 'bank', 'payment_date', 'reference_number', 'paid_by', 'notes']);
+    }
 
-        return redirect()->route('fees.show', ['student' => $payment->student_id, 'academic_year_id' => $request->academic_year_id])
-            ->with('success', 'Payment updated successfully.');
+    /**
+     * Term collection report: billed vs collected per class, per fee item, payment methods,
+     * and a day-by-day cash book for a date range.
+     */
+    public function report(Request $request)
+    {
+        $data = $this->reportData($request);
+        $data['terms'] = $this->terms();
+
+        return view('fees.report', $data);
+    }
+
+    public function printReport(Request $request)
+    {
+        $data = $this->reportData($request);
+        abort_unless($data['term'], 404, 'No term selected to print.');
+        $data['settings'] = $this->institutionSettings();
+
+        return view('fees.report-print', $data);
+    }
+
+    public function exportReport(Request $request)
+    {
+        $data = $this->reportData($request);
+
+        return Excel::download(new FeesReportExport($data['rows']), 'fees-report' . ($data['term'] ? '-' . \Illuminate\Support\Str::slug($data['term']->full_name) : '') . '.xlsx');
+    }
+
+    protected function reportData(Request $request): array
+    {
+        $term = $this->selectedTerm($request);
+        $from = $request->filled('from') ? \Carbon\Carbon::parse($request->from) : ($term?->start_date ?? now()->startOfMonth());
+        $to = $request->filled('to') ? \Carbon\Carbon::parse($request->to) : now();
+
+        $rows = collect();
+        $items = collect();
+        $methods = collect();
+        $daily = collect();
+        $grand = ['pupils' => 0, 'billed' => 0.0, 'collected' => 0.0, 'outstanding' => 0.0];
+
+        if ($term) {
+            $classGroups = ClassGroup::orderBy('level')->orderBy('name')->get();
+            $students = Student::where('status', 'active')->get(['id', 'class_group_id', 'level']);
+
+            $billed = StudentFeeCharge::where('semester_id', $term->id)
+                ->selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
+            $collected = StudentPayment::where('semester_id', $term->id)
+                ->selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
+
+            // Overall outstanding (all terms + arrears) per pupil, for the "still owing" column.
+            $allCharges = StudentFeeCharge::selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
+            $allPaid = StudentPayment::selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
+            $allArrears = StudentArrear::selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
+
+            $groups = $classGroups->map(fn ($c) => ['label' => $c->name, 'level' => $c->level, 'ids' => $students->where('class_group_id', $c->id)->pluck('id')]);
+            $unplaced = $students->whereNull('class_group_id')->pluck('id');
+            if ($unplaced->isNotEmpty()) {
+                $groups->push(['label' => 'Not in a class', 'level' => null, 'ids' => $unplaced]);
+            }
+
+            foreach ($groups as $group) {
+                if ($group['ids']->isEmpty()) {
+                    continue;
+                }
+
+                $b = $group['ids']->sum(fn ($id) => (float) ($billed[$id] ?? 0));
+                $c = $group['ids']->sum(fn ($id) => (float) ($collected[$id] ?? 0));
+                $o = $group['ids']->sum(fn ($id) => max(0, (float) ($allCharges[$id] ?? 0) + (float) ($allArrears[$id] ?? 0) - (float) ($allPaid[$id] ?? 0)));
+                $debtors = $group['ids']->filter(fn ($id) => (float) ($allCharges[$id] ?? 0) + (float) ($allArrears[$id] ?? 0) - (float) ($allPaid[$id] ?? 0) > 0.009)->count();
+
+                $rows->push([
+                    'class' => $group['label'],
+                    'level' => $group['level'],
+                    'pupils' => $group['ids']->count(),
+                    'debtors' => $debtors,
+                    'billed' => $b,
+                    'collected' => $c,
+                    'outstanding' => $o,
+                    'percentage' => $b > 0 ? round($c / $b * 100, 1) : 0,
+                ]);
+
+                $grand['pupils'] += $group['ids']->count();
+                $grand['billed'] += $b;
+                $grand['collected'] += $c;
+                $grand['outstanding'] += $o;
+            }
+
+            $categoryNames = FeeCategory::options();
+            $items = StudentFeeCharge::where('semester_id', $term->id)
+                ->selectRaw('category, COUNT(DISTINCT student_id) as pupils, SUM(amount) as total')
+                ->groupBy('category')->get()
+                ->map(fn ($row) => ['item' => $categoryNames[$row->category] ?? ucfirst($row->category), 'pupils' => $row->pupils, 'total' => (float) $row->total]);
+
+            $methods = StudentPayment::where('semester_id', $term->id)
+                ->selectRaw('payment_method, COUNT(*) as count, SUM(amount) as total')
+                ->groupBy('payment_method')->get()
+                ->map(fn ($row) => ['method' => StudentPayment::METHODS[$row->payment_method] ?? $row->payment_method, 'count' => $row->count, 'total' => (float) $row->total]);
+        }
+
+        $daily = StudentPayment::whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
+            ->selectRaw('payment_date, COUNT(*) as count, SUM(amount) as total')
+            ->groupBy('payment_date')->orderBy('payment_date')->get()
+            ->map(fn ($row) => ['date' => \Carbon\Carbon::parse($row->payment_date), 'count' => $row->count, 'total' => (float) $row->total]);
+
+        $payments = StudentPayment::with(['student.classGroup', 'recordedBy'])
+            ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
+            ->orderBy('payment_date')->orderBy('id')
+            ->get();
+
+        return compact('term', 'from', 'to', 'rows', 'items', 'methods', 'daily', 'payments', 'grand');
+    }
+
+    private function terms(): Collection
+    {
+        return Semester::with('academicYear')->get()
+            ->sortByDesc(fn ($t) => [$t->academicYear?->start_date?->timestamp ?? 0, $t->semester_number])
+            ->values();
+    }
+
+    private function selectedTerm(Request $request): ?Semester
+    {
+        if ($request->filled('semester_id')) {
+            return Semester::with('academicYear')->find($request->semester_id);
+        }
+
+        return Semester::with('academicYear')->where('is_current', true)->first()
+            ?? $this->terms()->first();
+    }
+
+    private function institutionSettings(): array
+    {
+        return DB::table('settings')->whereIn('category', ['institution', 'system'])
+            ->orderByRaw("category = 'institution'")
+            ->pluck('value', 'key')->toArray();
     }
 }

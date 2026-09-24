@@ -51,9 +51,7 @@
                     </div>
 
                     <div class="text-center">
-                        <a href="{{ route('student.transcript') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50">
-                            <i class="fas fa-graduation-cap"></i> View Full Transcript
-                        </a>
+                        
                     </div>
                 @endif
             </div>

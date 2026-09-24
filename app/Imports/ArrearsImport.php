@@ -39,7 +39,8 @@ class ArrearsImport implements ToCollection, WithHeadingRow, WithValidation, Ski
     public function collection(Collection $rows)
     {
         foreach ($rows as $row) {
-            $referenceNumber = trim((string) ($row['reference_number'] ?? ''));
+            // Pupils are matched on admission number (older sheets used a bank reference number).
+            $referenceNumber = trim((string) ($row['admission_number'] ?? $row['index_number'] ?? $row['reference_number'] ?? ''));
             $academicYearName = trim((string) ($row['academic_year'] ?? ''));
             $amount = $row['amount'] ?? null;
 
@@ -48,10 +49,11 @@ class ArrearsImport implements ToCollection, WithHeadingRow, WithValidation, Ski
                 continue;
             }
 
-            $student = Student::where('reference_number', $referenceNumber)->first();
+            $student = Student::where('index_number', $referenceNumber)->first()
+                ?? Student::where('reference_number', $referenceNumber)->first();
 
             if (!$student) {
-                $this->errors[] = "Student with reference number {$referenceNumber} not found.";
+                $this->errors[] = "Pupil with admission number {$referenceNumber} not found.";
                 $this->skipped++;
                 continue;
             }
@@ -59,7 +61,7 @@ class ArrearsImport implements ToCollection, WithHeadingRow, WithValidation, Ski
             $academicYear = AcademicYear::where('name', $academicYearName)->first();
 
             if (!$academicYear) {
-                $this->errors[] = "Academic year \"{$academicYearName}\" not found for student with reference number {$referenceNumber}.";
+                $this->errors[] = "Academic year \"{$academicYearName}\" not found for pupil {$referenceNumber}.";
                 $this->skipped++;
                 continue;
             }
@@ -67,7 +69,7 @@ class ArrearsImport implements ToCollection, WithHeadingRow, WithValidation, Ski
             // Negative amounts are valid here: they represent the school owing the student
             // (e.g. an overpayment) rather than the student owing the school.
             if (!is_numeric($amount) || (float) $amount == 0.0) {
-                $this->errors[] = "Invalid amount for student with reference number {$referenceNumber} ({$academicYearName}).";
+                $this->errors[] = "Invalid amount for pupil {$referenceNumber} ({$academicYearName}).";
                 $this->skipped++;
                 continue;
             }

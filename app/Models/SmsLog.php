@@ -14,12 +14,14 @@ class SmsLog extends Model
     public const TYPE_EXEAT = 'exeat';
     public const TYPE_CAMPUS_CHECKIN = 'campus_checkin';
     public const TYPE_GRADES = 'grades';
+    public const TYPE_FEES = 'fees';
 
     public const TYPE_LABELS = [
         self::TYPE_CAMPAIGN => 'Bulk Campaign',
         self::TYPE_EXEAT => 'Exeat',
         self::TYPE_CAMPUS_CHECKIN => 'Campus Check-In',
-        self::TYPE_GRADES => 'Grades',
+        self::TYPE_GRADES => 'Terminal Report',
+        self::TYPE_FEES => 'Fee Receipt / Reminder',
     ];
 
     protected $fillable = [

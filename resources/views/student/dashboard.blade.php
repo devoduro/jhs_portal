@@ -6,7 +6,7 @@
             <h2 class="text-3xl font-bold mb-2">Welcome back, {{ $student->full_name }}!</h2>
             <p class="text-blue-100 flex items-center">
                 <i class="fas fa-graduation-cap mr-2"></i>
-                {{ $student->programme->name }} • {{ \App\Support\FormLabel::label($student->level) }}
+                {{ $student->classGroup->name ?? \App\Support\FormLabel::label($student->level) }}
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
                 <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm bg-white/10 text-blue-50">
@@ -50,13 +50,17 @@
                     </span>
                 @endif
             </div>
-            <h3 class="text-lg font-medium text-purple-100 mb-1">Current Aggregate</h3>
-            <div class="flex items-baseline">
-                <span class="text-4xl font-bold">{{ $aggregate ?? 'Pending' }}</span>
-                @if($gradeStanding)
-                    <span class="text-purple-200 ml-2">{{ $gradeStanding }}</span>
-                @endif
-            </div>
+            @if($isJhs)
+                <h3 class="text-lg font-medium text-purple-100 mb-1">JHS Aggregate (best 6)</h3>
+                <div class="flex items-baseline">
+                    <span class="text-4xl font-bold">{{ $aggregate ?? 'Pending' }}</span>
+                </div>
+            @else
+                <h3 class="text-lg font-medium text-purple-100 mb-1">School fees owing</h3>
+                <div class="flex items-baseline">
+                    <span class="text-3xl font-bold">GH₵ {{ number_format(max($balance, 0), 2) }}</span>
+                </div>
+            @endif
         </div>
 
         <!-- Subjects Card -->
@@ -157,7 +161,7 @@
                 <h3 class="text-xl font-bold text-gray-800">Recent Results</h3>
                 <a href="{{ route('student.report-card') }}"
                    class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors duration-200">
-                    View My Semester Reports
+                    View My Terminal Reports
                 </a>
             </div>
         </div>

@@ -114,7 +114,7 @@
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <div class="text-sm font-medium text-gray-900">{{ $arrear->student->full_name ?? 'Unknown' }}</div>
                                                 <div class="text-sm text-gray-500">{{ $arrear->student->index_number ?? '-' }}</div>
-                                                <div class="text-xs text-gray-400">Ref: {{ $arrear->student->reference_number ?? 'Not set' }}</div>
+                                                
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $arrear->academicYear->name ?? 'N/A' }}</td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium {{ $arrear->amount < 0 ? 'text-green-600' : 'text-gray-900' }}">

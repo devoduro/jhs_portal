@@ -20,7 +20,7 @@ class StudentFeesExport implements FromCollection, WithHeadings, WithMapping
 
     public function headings(): array
     {
-        return ['Index Number', 'Full Name', 'Programme', 'Level', 'Arrears', 'Fee Amount', 'Paid', 'Balance', 'Status', '% Paid'];
+        return ['Admission No.', 'Pupil', 'Class', 'Balance b/f', 'Term Bill', 'Paid (Term)', 'Balance', 'Status', 'Parent/Guardian', 'Parent Phone'];
     }
 
     public function map($row): array
@@ -30,14 +30,14 @@ class StudentFeesExport implements FromCollection, WithHeadings, WithMapping
         return [
             $student->index_number,
             $student->full_name,
-            $student->programme->name ?? 'N/A',
-            $student->level,
-            number_format($row['arrears'], 2),
-            $row['fee_amount'] !== null ? number_format($row['fee_amount'], 2) : 'Not set',
-            number_format($row['paid'], 2),
-            number_format($row['balance'], 2),
-            ucfirst($row['status']),
-            $row['percentage'] . '%',
+            $student->classGroup->name ?? \App\Support\FormLabel::label($student->level),
+            round($row['brought_forward'], 2),
+            round($row['term_bill'], 2),
+            round($row['term_paid'], 2),
+            round($row['balance'], 2),
+            ['debtor' => 'Owing', 'creditor' => 'In credit', 'settled' => 'Paid'][$row['status']],
+            $student->emergency_contact_name,
+            $student->emergency_contact_phone,
         ];
     }
 }

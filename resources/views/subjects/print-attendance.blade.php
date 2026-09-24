@@ -55,7 +55,7 @@
             </div>
             <div>
                 <p class="text-gray-500">Semester</p>
-                <p class="font-semibold">{{ $subject->semester->name ?? 'N/A' }} &bull; {{ $subject->semester->academicYear->name ?? '' }}</p>
+                <p class="font-semibold">{{ \App\Support\FormLabel::label($subject->level) }}</p>
             </div>
         </div>
 

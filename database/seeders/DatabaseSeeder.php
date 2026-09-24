@@ -17,16 +17,10 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AdminUserSeeder::class,
             RolesAndPermissionsSeeder::class,
-            ProgrammeSeeder::class,
             AcademicYearSeeder::class,
             SemesterSeeder::class,
-            SubjectSeeder::class,
-            GradeSchemeSeeder::class,
-            HouseSeeder::class,
-            StudentSeeder::class,
-            UserSeeder::class,
-            ResultSeeder::class,
             SettingsTableSeeder::class,
+            BasicSchoolSeeder::class,
         ]);
 
         // Create a test user

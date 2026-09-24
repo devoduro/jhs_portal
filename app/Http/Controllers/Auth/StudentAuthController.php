@@ -8,7 +8,6 @@ use App\Models\Assignment;
 use App\Models\CaScoreSetting;
 use App\Models\ContinuousAssessment;
 use App\Models\Quiz;
-use App\Models\Registration;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\Subject;
@@ -161,9 +160,9 @@ class StudentAuthController extends Controller
         // Subjects actually offered to this student right now (same enrollment logic as
         // Subject::students() - active, at their form, on their programme), not just
         // subjects that happen to have a result recorded yet.
-        $currentSubjectIds = Subject::where('level', $student->level)
-            ->whereHas('programmes', fn ($q) => $q->where('programmes.id', $student->programme_id))
-            ->pluck('id');
+        $currentSubjectIds = Subject::where('level', $student->level)->pluck('id');
+        $balance = $student->outstandingBalance();
+        $isJhs = \App\Support\FormLabel::isJhs($student->level);
 
         // Get WASSCE division standing and other data
         $gradeStanding = $student->getGradeStanding();
@@ -210,112 +209,10 @@ class StudentAuthController extends Controller
             'currentSemester',
             'todayEntries',
             'pendingQuizzesCount',
-            'pendingAssignmentsCount'
+            'pendingAssignmentsCount',
+            'balance',
+            'isJhs'
         ));
-    }
-
-    /**
-     * Show the student's transcript.
-     */
-    public function transcript()
-    {
-        $student = Auth::user()->student;
-        
-        // Get results
-        $results = $student->results()
-            ->with(['subject', 'semester', 'academicYear'])
-            ->orderBy('academic_year_id')
-            ->orderBy('semester_id')
-            ->get();
-        
-        // Group results by academic year and semester
-        $groupedResults = [];
-        foreach ($results as $result) {
-            $academicYearId = $result->academic_year_id;
-            $semesterId = $result->semester_id;
-            
-            if (!isset($groupedResults[$academicYearId])) {
-                $groupedResults[$academicYearId] = [
-                    'academic_year' => $result->academicYear,
-                    'semesters' => []
-                ];
-            }
-            
-            if (!isset($groupedResults[$academicYearId]['semesters'][$semesterId])) {
-                $groupedResults[$academicYearId]['semesters'][$semesterId] = [
-                    'semester' => $result->semester,
-                    'results' => [],
-                    'gpa' => 0
-                ];
-            }
-            
-            $groupedResults[$academicYearId]['semesters'][$semesterId]['results'][] = $result;
-        }
-        
-        // Calculate WASSCE aggregate for each semester
-        foreach ($groupedResults as &$academicYear) {
-            foreach ($academicYear['semesters'] as $semesterId => &$semesterData) {
-                $semesterData['aggregate'] = $student->calculateAggregate($semesterId);
-            }
-        }
-
-        $aggregate = $student->calculateAggregate();
-        $gradeStanding = $student->getGradeStanding();
-
-        // Get institution settings from DB
-        $institutionSettings = \DB::table('settings')->where('category', 'institution')->get();
-
-        // Convert settings collection to associative array for easier access in the view
-        $settings = [];
-        foreach ($institutionSettings as $setting) {
-            $settings[$setting->key] = $setting->value;
-        }
-
-        return view('student.transcript', compact('student', 'groupedResults', 'aggregate', 'gradeStanding', 'settings'));
-    }
-
-    /**
-     * Show the student's Continuous Assessment breakdown for their registered subjects.
-     */
-    public function continuousAssessment()
-    {
-        $student = Auth::user()->student;
-
-        $registrations = Registration::where('student_id', $student->id)
-            ->where('status', 'registered')
-            ->with(['subject.semester.academicYear'])
-            ->get()
-            ->filter(fn ($registration) => $registration->subject !== null);
-
-        $rows = $registrations->map(function ($registration) use ($student) {
-            $subject = $registration->subject;
-            $semester = $subject->semester;
-
-            $ca = ContinuousAssessment::where('student_id', $student->id)
-                ->where('subject_id', $subject->id)
-                ->where('semester_id', $semester?->id)
-                ->where('academic_year_id', $registration->academic_year_id)
-                ->first();
-
-            $setting = CaScoreSetting::where('level', $student->level)->first();
-            $attendanceScore = (float) ($ca->attendance_score ?? 0);
-
-            $total = $attendanceScore
-                + (float) ($ca->project_score ?? 0)
-                + (float) ($ca->assignment_score ?? 0)
-                + (float) ($ca->mid_semester_score ?? 0);
-
-            return [
-                'subject' => $subject,
-                'semester' => $semester,
-                'ca' => $ca,
-                'setting' => $setting,
-                'attendance_score' => $attendanceScore,
-                'total' => $total,
-            ];
-        });
-
-        return view('student.continuous-assessment', compact('student', 'rows'));
     }
 
     /**

@@ -18,7 +18,7 @@ class StudentFeeChargeController extends Controller
      */
     public function index(Request $request)
     {
-        $query = StudentFeeCharge::with(['student', 'academicYear']);
+        $query = StudentFeeCharge::with(['student', 'academicYear', 'semester']);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -46,6 +46,35 @@ class StudentFeeChargeController extends Controller
         $categories = FeeCategory::orderBy('name')->get();
 
         return view('fees.charges.index', compact('charges', 'academicYears', 'categories'));
+    }
+
+    /**
+     * Bill a one-off item (bus fee, uniform, excursion...) to a single pupil from their fee
+     * account page. A negative amount records a discount/waiver against that item.
+     */
+    public function store(Request $request, \App\Models\Student $student)
+    {
+        $data = $request->validate([
+            'semester_id' => 'required|exists:semesters,id',
+            'category' => 'required|in:' . implode(',', array_keys(FeeCategory::options())),
+            'amount' => 'required|numeric|not_in:0',
+            'notes' => 'nullable|string|max:255',
+        ]);
+
+        $term = \App\Models\Semester::findOrFail($data['semester_id']);
+
+        StudentFeeCharge::updateOrCreate(
+            ['student_id' => $student->id, 'semester_id' => $term->id, 'category' => $data['category']],
+            [
+                'academic_year_id' => $term->academic_year_id,
+                'amount' => $data['amount'],
+                'notes' => $data['notes'] ?? null,
+                'recorded_by' => auth()->id(),
+            ]
+        );
+
+        return redirect()->route('fees.show', ['student' => $student, 'semester_id' => $term->id])
+            ->with('success', FeeCategory::options()[$data['category']] . ' of GH₵ ' . number_format($data['amount'], 2) . ' added to ' . $student->full_name . "'s {$term->name} bill.");
     }
 
     /**

@@ -1,161 +1,57 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Edit Subject') }}
-            </h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ __('Edit Subject') }} — {{ $subject->title }} ({{ \App\Support\FormLabel::label($subject->level) }})</h2>
+            <x-button href="{{ route('subjects.index', ['level' => $subject->level]) }}" variant="secondary" icon="fas fa-arrow-left">Subjects</x-button>
         </div>
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6 bg-white border-b border-gray-200">
-                    <form action="{{ route('subjects.update', $subject->id) }}" method="POST" class="space-y-6">
-                        @csrf
-                        @method('PUT')
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Subject Code -->
-                            <div>
-                                <label for="code" class="block text-sm font-medium text-gray-700 mb-1">Subject Code <span class="text-red-500">*</span></label>
-                                <input type="text" name="code" id="code" value="{{ old('code', $subject->code) }}" required class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">
-                                @error('code')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                            
-                            <!-- Subject Title -->
-                            <div>
-                                <label for="title" class="block text-sm font-medium text-gray-700 mb-1">Subject Title <span class="text-red-500">*</span></label>
-                                <input type="text" name="title" id="title" value="{{ old('title', $subject->title) }}" required class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">
-                                @error('title')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                            
-                            <!-- Credit Hours -->
-                            <div>
-                                <label for="credit_hours" class="block text-sm font-medium text-gray-700 mb-1">Credit Hours <span class="text-red-500">*</span></label>
-                                <input type="number" step="0.5" min="0" name="credit_hours" id="credit_hours" value="{{ old('credit_hours', $subject->credit_hours) }}" required class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">
-                                @error('credit_hours')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+    <div class="py-8">
+        <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
+            <form method="POST" action="{{ route('subjects.update', $subject) }}" class="bg-white shadow-sm rounded-lg p-6 space-y-6">
+                @csrf
+                @method('PUT')
+                @if($errors->any())
+                    <div class="p-3 bg-red-50 text-red-700 text-sm rounded">{{ $errors->first() }}</div>
+                @endif
 
-                            <!-- Level -->
-                            <div>
-                                <label for="level" class="block text-sm font-medium text-gray-700 mb-1">Form <span class="text-red-500">*</span></label>
-                                <select id="level" name="level" required class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">
-                                    <option value="">Select Form</option>
-                                    @foreach(\App\Support\FormLabel::OPTIONS as $levelOption => $levelLabel)
-                                        <option value="{{ $levelOption }}" {{ old('level', $subject->level) == $levelOption ? 'selected' : '' }}>{{ $levelLabel }}</option>
-                                    @endforeach
-                                </select>
-                                @error('level')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Programmes -->
-                            <div>
-                                <label for="programmes" class="block text-sm font-medium text-gray-700 mb-1">Programmes <span class="text-red-500">*</span></label>
-                                <p class="text-xs text-gray-500 mb-1">Select all programmes that can take this subject</p>
-                                <select id="programmes" name="programme_ids[]" multiple required class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md" size="5">
-                                    @foreach($programmes as $programme)
-                                        <option value="{{ $programme->id }}" 
-                                            {{ in_array($programme->id, old('programme_ids', $subject->programmes->pluck('id')->toArray())) ? 'selected' : '' }}>
-                                            {{ $programme->name }} ({{ $programme->code }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <p class="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd key to select multiple programmes</p>
-                                @error('programme_ids')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                                @error('programme_ids.*')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                            
-                            <!-- Semester -->
-                            <div>
-                                <label for="semester_id" class="block text-sm font-medium text-gray-700 mb-1">Semester <span class="text-red-500">*</span></label>
-                                <select id="semester_id" name="semester_id" required class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">
-                                    <option value="">Select Semester</option>
-                                    @foreach($semesters as $semester)
-                                        <option value="{{ $semester->id }}" {{ old('semester_id', $subject->semester_id) == $semester->id ? 'selected' : '' }}>
-                                            {{ $semester->name }}  ({{ $semester->academicYear->name ?? 'N/A' }})
-                                        </option>
-                                    @endforeach
-                                </select>
-
-
-                                
-                                @error('semester_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Teachers -->
-                            <div>
-                                <label for="teachers" class="block text-sm font-medium text-gray-700 mb-1">Teachers</label>
-                                <p class="text-xs text-gray-500 mb-1">Select all teachers who teach this subject. Hold Ctrl/Cmd to select multiple.</p>
-                                <select id="teachers" name="teacher_ids[]" multiple class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md" size="5">
-                                    @foreach($teachers as $teacher)
-                                        <option value="{{ $teacher->id }}" {{ in_array($teacher->id, old('teacher_ids', $subject->teachers->pluck('id')->toArray())) ? 'selected' : '' }}>
-                                            {{ $teacher->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('teacher_ids')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                                @error('teacher_ids.*')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Subject Type -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Subject Type <span class="text-red-500">*</span></label>
-                                <div class="flex items-center space-x-4">
-                                    <div class="flex items-center">
-                                        <input id="is_core_yes" name="is_core" type="radio" value="1" {{ old('is_core', $subject->is_core) ? 'checked' : '' }} class="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300">
-                                        <label for="is_core_yes" class="ml-2 block text-sm text-gray-700">Core</label>
-                                    </div>
-                                    <div class="flex items-center">
-                                        <input id="is_core_no" name="is_core" type="radio" value="0" {{ old('is_core', $subject->is_core) ? '' : 'checked' }} class="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300">
-                                        <label for="is_core_no" class="ml-2 block text-sm text-gray-700">Elective</label>
-                                    </div>
-                                </div>
-                                @error('is_core')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                        
-                        <!-- Subject Description -->
-                        <div>
-                            <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                            <textarea id="description" name="description" rows="4" class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">{{ old('description', $subject->description) }}</textarea>
-                            @error('description')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-                        
-                        <!-- Form Actions -->
-                        <div class="flex items-center justify-end space-x-3 pt-4">
-                            <a href="{{ route('subjects.index') }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                                Cancel
-                            </a>
-                            <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                                Update Subject
-                            </button>
-                        </div>
-                    </form>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <x-input name="title" label="Subject name" :value="old('title', $subject->title)" required class="md:col-span-2" />
+                    <x-input name="code" label="Code" :value="old('code', $subject->code)" required />
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Class level</label>
+                        <select name="level" class="w-full rounded-lg border-gray-300 text-sm" required>
+                            @foreach(\App\Support\FormLabel::options() as $level => $label)
+                                <option value="{{ $level }}" @selected(old('level', $subject->level) == $level)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 </div>
-            </div>
+
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="hidden" name="is_core" value="0">
+                    <input type="checkbox" name="is_core" value="1" class="rounded border-gray-300" @checked(old('is_core', $subject->is_core))>
+                    Core subject (always counted in the JHS aggregate)
+                </label>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Subject teacher(s)</label>
+                    <select name="teacher_ids[]" multiple size="5" class="w-full rounded-lg border-gray-300 text-sm">
+                        @foreach($teachers as $teacher)
+                            <option value="{{ $teacher->id }}" @selected(in_array($teacher->id, old('teacher_ids', $subject->teachers->pluck('id')->all())))>{{ $teacher->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea name="description" rows="2" class="w-full rounded-lg border-gray-300 text-sm">{{ old('description', $subject->description) }}</textarea>
+                </div>
+
+                <div class="flex justify-end">
+                    <x-button type="submit" icon="fas fa-check">Save Changes</x-button>
+                </div>
+            </form>
         </div>
     </div>
 </x-app-layout>

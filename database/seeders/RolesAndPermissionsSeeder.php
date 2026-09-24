@@ -17,13 +17,13 @@ class RolesAndPermissionsSeeder extends Seeder
     public const PERMISSIONS = [
         'manage-students',
         'view-student-directory',
-        'manage-programmes',
         'manage-semesters',
         'manage-subjects',
         'manage-results',
         'view-results',
+        'enter-scores',
+        'manage-term-reports',
         'manage-fees',
-        'manage-transcripts',
         'view-reports',
         'send-sms',
         'manage-settings',
@@ -31,12 +31,9 @@ class RolesAndPermissionsSeeder extends Seeder
         'manage-roles',
         'view-activity-logs',
         'manage-import-export',
-        'manage-biometric',
         'manage-classes',
         'manage-timetable',
         'manage-continuous-assessment',
-        'manage-houses',
-        'manage-admissions',
         'manage-quizzes',
         'manage-assignments',
     ];
@@ -50,9 +47,11 @@ class RolesAndPermissionsSeeder extends Seeder
     public const DEFAULT_ROLES = [
         'Super Admin' => [],
         'Accountant' => ['manage-fees', 'view-reports', 'view-student-directory'],
-        'Principal' => ['view-reports'],
-        'Exams Officer' => ['manage-results', 'manage-subjects', 'manage-transcripts', 'manage-classes', 'manage-timetable', 'manage-continuous-assessment', 'manage-admissions', 'manage-quizzes', 'manage-assignments'],
-        'Teacher' => ['view-results', 'manage-continuous-assessment', 'manage-quizzes', 'manage-assignments'],
+        'Head Teacher' => ['view-reports', 'view-results', 'manage-term-reports', 'view-student-directory'],
+        'Exams Officer' => ['manage-results', 'view-results', 'enter-scores', 'manage-term-reports', 'manage-subjects', 'manage-classes', 'manage-timetable', 'manage-continuous-assessment', 'manage-quizzes', 'manage-assignments'],
+        // Teachers only see the classes/subjects they are assigned to (ScoreSheetController,
+        // TermReportController scope them), so the same permissions are safe to hand out.
+        'Teacher' => ['view-results', 'enter-scores', 'manage-term-reports', 'manage-continuous-assessment', 'manage-quizzes', 'manage-assignments'],
     ];
 
     /**

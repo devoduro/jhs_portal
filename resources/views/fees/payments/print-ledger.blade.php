@@ -27,47 +27,33 @@
     </div>
 
     <div class="max-w-4xl mx-auto p-8 bg-white my-6 print:my-0 print:shadow-none shadow-md rounded-lg">
-        <!-- Letterhead -->
-        <div class="text-center border-b-2 border-gray-800 pb-4 mb-6">
-            @php
-                $logoFile = public_path('images/logos/institution_logo.png');
-                $logoBase64 = file_exists($logoFile) ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoFile)) : null;
-            @endphp
-            @if($logoBase64)
-                <img src="{{ $logoBase64 }}" alt="Institution Logo" class="mx-auto mb-2" style="max-width: 90px; max-height: 90px;">
-            @endif
-            <h1 class="text-xl font-bold uppercase tracking-wide">{{ $settings['institution_name'] ?? 'Institution' }}</h1>
-            @if(!empty($settings['institution_address']))
-                <p class="text-xs text-gray-500 mt-1">{{ $settings['institution_address'] }}</p>
-            @endif
-            <h2 class="text-lg font-semibold text-primary-700 mt-3">Statement of Account</h2>
-        </div>
+        @include('partials.letterhead', ['settings' => $settings, 'title' => 'Statement of Account'])
 
-        <!-- Student Details -->
+        <!-- Pupil Details -->
         <div class="relative grid grid-cols-2 gap-4 mb-6 text-sm">
             <x-student-photo :student="$student" class="absolute top-0 right-0 w-20 h-20 rounded-lg border border-gray-200" />
             <div>
-                <p class="text-gray-500">Student Name</p>
+                <p class="text-gray-500">Pupil</p>
                 <p class="font-semibold">{{ $student->full_name }}</p>
             </div>
             <div>
-                <p class="text-gray-500">Index Number</p>
+                <p class="text-gray-500">Admission No.</p>
                 <p class="font-semibold">{{ $student->index_number }}</p>
             </div>
             <div>
-                <p class="text-gray-500">Programme</p>
-                <p class="font-semibold">{{ $student->programme->name ?? 'N/A' }}</p>
+                <p class="text-gray-500">Class</p>
+                <p class="font-semibold">{{ $student->classGroup->name ?? \App\Support\FormLabel::label($student->level) }}</p>
             </div>
             <div>
-                <p class="text-gray-500">Form</p>
-                <p class="font-semibold">{{ $student->level ? \App\Support\FormLabel::label($student->level) : 'N/A' }}</p>
+                <p class="text-gray-500">Parent / Guardian</p>
+                <p class="font-semibold">{{ $student->emergency_contact_name ?: '—' }} {{ $student->emergency_contact_phone }}</p>
             </div>
         </div>
 
         <!-- Balance Summary -->
         <div class="mb-6 text-center">
             <div class="border border-gray-300 rounded-lg p-3 inline-block min-w-[240px]">
-                <p class="text-xs text-gray-500 uppercase">Total Balance Due</p>
+                <p class="text-xs text-gray-500 uppercase">Amount Owing (GH₵)</p>
                 <p class="text-lg font-semibold {{ $balanceDue > 0 ? 'text-red-700' : 'text-green-700' }}">{{ number_format($balanceDue, 2) }}</p>
             </div>
         </div>
@@ -76,30 +62,28 @@
             <thead>
                 <tr class="bg-gray-100">
                     <th class="border border-gray-300 px-3 py-2 text-left">Date</th>
-                    <th class="border border-gray-300 px-3 py-2 text-left">Academic Year</th>
+                    <th class="border border-gray-300 px-3 py-2 text-left">Year</th>
                     <th class="border border-gray-300 px-3 py-2 text-left">Description</th>
-                    <th class="border border-gray-300 px-3 py-2 text-right">Debit</th>
-                    <th class="border border-gray-300 px-3 py-2 text-right">Credit</th>
+                    <th class="border border-gray-300 px-3 py-2 text-right">Bill</th>
+                    <th class="border border-gray-300 px-3 py-2 text-right">Paid</th>
                     <th class="border border-gray-300 px-3 py-2 text-right">Balance</th>
-                    <th class="border border-gray-300 px-3 py-2 text-left">Bank</th>
-                    <th class="border border-gray-300 px-3 py-2 text-left">Payment Mode</th>
+                    <th class="border border-gray-300 px-3 py-2 text-left">Mode</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse($ledger as $row)
                     <tr>
-                        <td class="border border-gray-300 px-3 py-2">{{ \Illuminate\Support\Carbon::parse($row['date'])->format('M d, Y') }}</td>
+                        <td class="border border-gray-300 px-3 py-2">{{ \Illuminate\Support\Carbon::parse($row['date'])->format('d/m/Y') }}</td>
                         <td class="border border-gray-300 px-3 py-2">{{ $row['academic_year'] }}</td>
                         <td class="border border-gray-300 px-3 py-2">{{ $row['description'] }}</td>
                         <td class="border border-gray-300 px-3 py-2 text-right">{{ $row['debit'] ? number_format($row['debit'], 2) : '-' }}</td>
                         <td class="border border-gray-300 px-3 py-2 text-right">{{ $row['credit'] ? number_format($row['credit'], 2) : '-' }}</td>
                         <td class="border border-gray-300 px-3 py-2 text-right font-medium">{{ number_format($row['balance'], 2) }}</td>
-                        <td class="border border-gray-300 px-3 py-2">{{ $row['bank'] ?? '-' }}</td>
-                        <td class="border border-gray-300 px-3 py-2">{{ $row['payment_mode'] ? ucwords(str_replace('_', ' ', $row['payment_mode'])) : '-' }}</td>
+                        <td class="border border-gray-300 px-3 py-2">{{ $row['payment_mode'] ?? '' }}{{ !empty($row['bank']) ? ' - ' . $row['bank'] : '' }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="8" class="border border-gray-300 px-3 py-6 text-center text-gray-400">No fee transactions recorded yet.</td>
+                        <td colspan="7" class="border border-gray-300 px-3 py-6 text-center text-gray-400">No fee transactions recorded yet.</td>
                     </tr>
                 @endforelse
             </tbody>

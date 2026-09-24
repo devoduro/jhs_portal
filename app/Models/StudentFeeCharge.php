@@ -18,6 +18,7 @@ class StudentFeeCharge extends Model
     protected $fillable = [
         'student_id',
         'academic_year_id',
+        'semester_id',
         'category',
         'amount',
         'notes',
@@ -60,6 +61,11 @@ class StudentFeeCharge extends Model
     /**
      * Get the admin who uploaded/recorded this charge.
      */
+    public function semester(): BelongsTo
+    {
+        return $this->belongsTo(Semester::class);
+    }
+
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by');

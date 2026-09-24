@@ -20,6 +20,7 @@ class Grade extends Model
         'grade',
         'min_score',
         'grade_value',
+        'remark',
     ];
 
     /**

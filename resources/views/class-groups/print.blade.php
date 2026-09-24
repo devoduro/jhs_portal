@@ -56,7 +56,7 @@
             <h2 class="text-lg font-semibold text-primary-700 mt-3">Class List</h2>
             <p class="text-sm text-gray-600 mt-1">
                 Class: <span class="font-semibold">{{ $classGroup->name }}</span>
-                &bull; {{ $classGroup->programme->name ?? '' }}
+                &bull; Class teacher: {{ $classGroup->classTeacher->name ?? '—' }}
                 &bull; {{ \App\Support\FormLabel::label($classGroup->level) }}
                 &bull; {{ $students->count() }} student(s)
             </p>

@@ -22,6 +22,9 @@ class Semester extends Model
         'semester_number',
         'start_date',
         'end_date',
+        'vacation_date',
+        'next_term_begins',
+        'attendance_days',
         'is_current',
         'required_payment_percentage',
         'registration_open',
@@ -38,6 +41,8 @@ class Semester extends Model
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'vacation_date' => 'date',
+        'next_term_begins' => 'date',
         'is_current' => 'boolean',
         'required_payment_percentage' => 'decimal:2',
         'registration_open' => 'boolean',
@@ -54,6 +59,54 @@ class Semester extends Model
         return $this->belongsTo(AcademicYear::class);
     }
     
+    /**
+     * "First Term (2025/2026)" - the term name with its academic year, for dropdowns.
+     */
+    public function getFullNameAttribute(): string
+    {
+        return $this->name . ($this->academicYear ? ' (' . $this->academicYear->name . ')' : '');
+    }
+
+    /**
+     * The term that follows this one - the next term in the same academic year, or the first
+     * term of the following academic year.
+     */
+    public function nextTerm(): ?self
+    {
+        $sameYear = static::where('academic_year_id', $this->academic_year_id)
+            ->where('semester_number', '>', $this->semester_number)
+            ->orderBy('semester_number')
+            ->first();
+
+        if ($sameYear) {
+            return $sameYear;
+        }
+
+        $currentYearStart = $this->academicYear?->start_date;
+
+        if (!$currentYearStart) {
+            return null;
+        }
+
+        return static::whereHas('academicYear', fn ($q) => $q->where('start_date', '>', $currentYearStart))
+            ->with('academicYear')
+            ->get()
+            ->sortBy(fn ($t) => [$t->academicYear->start_date, $t->semester_number])
+            ->first();
+    }
+
+    public function isFinalTerm(): bool
+    {
+        return !static::where('academic_year_id', $this->academic_year_id)
+            ->where('semester_number', '>', $this->semester_number)
+            ->exists();
+    }
+
+    public function termReports(): HasMany
+    {
+        return $this->hasMany(TermReport::class);
+    }
+
     /**
      * Get the subjects for the semester.
      */

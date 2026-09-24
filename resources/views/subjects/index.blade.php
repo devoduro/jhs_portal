@@ -1,188 +1,63 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Subjects') }}
-            </h2>
-            <div class="flex space-x-2">
-                <x-button href="{{ route('subjects.create') }}" icon="fas fa-plus">
-                    {{ __('Add Subject') }}
-                </x-button>
-                <x-button variant="secondary" icon="fas fa-file-export">
-                    {{ __('Export') }}
-                </x-button>
-            </div>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ __('Subjects') }}</h2>
+            @can('manage-subjects')
+                <x-button href="{{ route('subjects.create') }}" icon="fas fa-plus">Add Subject</x-button>
+            @endcan
         </div>
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6 bg-white border-b border-gray-200">
-                    <!-- Search and Filters -->
-                    <form method="GET" action="{{ route('subjects.index') }}" class="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div class="relative flex-1">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-search text-gray-400"></i>
-                            </div>
-                            <input type="text" name="search" value="{{ request('search') }}" placeholder="Search by code or title..." class="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                        </div>
-                        <div class="flex flex-col md:flex-row gap-4">
-                            <select name="programme_id" onchange="this.form.submit()" class="border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-4 py-2">
-                                <option value="">All Programmes</option>
-                                @foreach($programmes as $programme)
-                                    <option value="{{ $programme->id }}" {{ (string) request('programme_id') === (string) $programme->id ? 'selected' : '' }}>{{ $programme->name }}</option>
-                                @endforeach
-                            </select>
-                            <select name="semester_id" onchange="this.form.submit()" class="border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-4 py-2">
-                                <option value="">All Semesters</option>
-                                @foreach($semesters as $semester)
-                                    <option value="{{ $semester->id }}" {{ (string) request('semester_id') === (string) $semester->id ? 'selected' : '' }}>{{ $semester->name }} - {{ $semester->academicYear->name ?? '' }}</option>
-                                @endforeach
-                            </select>
-                            <select name="level" onchange="this.form.submit()" class="border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-4 py-2">
-                                <option value="">All Forms</option>
-                                @foreach(\App\Support\FormLabel::OPTIONS as $levelOption => $levelLabel)
-                                    <option value="{{ $levelOption }}" {{ (string) request('level') === (string) $levelOption ? 'selected' : '' }}>{{ $levelLabel }}</option>
-                                @endforeach
-                            </select>
-                            <button type="submit" class="bg-primary-600 text-white rounded-md px-4 py-2 text-sm hover:bg-primary-700">
-                                <i class="fas fa-filter mr-1"></i> Filter
-                            </button>
-                            @if(request()->hasAny(['search', 'programme_id', 'semester_id']))
-                                <a href="{{ route('subjects.index') }}" class="inline-flex items-center px-4 py-2 text-sm text-gray-600 hover:text-primary-600">
-                                    Clear
-                                </a>
-                            @endif
-                        </div>
-                    </form>
-
-                    <!-- Subjects Table -->
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Code
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Title
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Form
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Programme
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Credit Hours
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Semester
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Type
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                @forelse($subjects ?? [] as $subject)
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            {{ $subject->code }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $subject->title }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            @if($subject->level)
-                                                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                                                    {{ \App\Support\FormLabel::label($subject->level) }}
-                                                </span>
-                                            @else
-                                                <span class="text-gray-400">N/A</span>
-                                            @endif
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            @if($subject->programmes->count() > 0)
-                                                <div class="flex flex-wrap gap-1">
-                                                    @foreach($subject->programmes->take(2) as $programme)
-                                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                            {{ $programme->code }}
-                                                        </span>
-                                                    @endforeach
-                                                    @if($subject->programmes->count() > 2)
-                                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">+{{ $subject->programmes->count() - 2 }}</span>
-                                                    @endif
-                                                </div>
-                                            @else
-                                                <span class="text-gray-400">None</span>
-                                            @endif
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {{ $subject->credit_hours }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {{ $subject->semester->name ?? 'N/A' }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                            <span class="px-2 py-1 text-xs font-semibold rounded-full {{ $subject->is_core ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800' }}">
-                                                {{ $subject->is_core ? 'Core' : 'Elective' }}
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <div class="flex justify-end space-x-2">
-                                                <a href="{{ route('subjects.show', $subject) }}" class="text-primary-600 hover:text-primary-900" title="View">
-                                                    <i class="fas fa-eye"></i>
-                                                </a>
-                                                <a href="{{ route('subjects.edit', $subject) }}" class="text-indigo-600 hover:text-indigo-900" title="Edit">
-                                                    <i class="fas fa-edit"></i>
-                                                </a>
-                                                <a href="{{ route('subjects.students', $subject) }}" class="text-green-600 hover:text-green-900" title="View Students">
-                                                    <i class="fas fa-users"></i>
-                                                </a>
-                                                <button type="button" class="text-red-600 hover:text-red-900" title="Delete" 
-                                                        onclick="confirm('Are you sure you want to delete this subject?') && document.getElementById('delete-subject-{{ $subject->id }}').submit()">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                                <form id="delete-subject-{{ $subject->id }}" action="{{ route('subjects.destroy', $subject) }}" method="POST" class="hidden">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                </form>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="8" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                                            <div class="flex flex-col items-center justify-center py-12">
-                                                <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                                                </svg>
-                                                <p class="mt-4 text-lg font-medium text-gray-500">No subjects found</p>
-                                                <p class="mt-1 text-sm text-gray-400">Get started by adding your first subject</p>
-                                                <x-button href="{{ route('subjects.create') }}" class="mt-4" icon="fas fa-plus">
-                                                    Add Subject
-                                                </x-button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Pagination -->
-                    <div class="mt-4">
-                        @if(isset($subjects) && $subjects->hasPages())
-                            {{ $subjects->links() }}
-                        @endif
-                    </div>
+    <div class="py-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+            <form method="GET" action="{{ route('subjects.index') }}" class="bg-white shadow-sm rounded-lg p-4 flex flex-wrap items-end gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Search</label>
+                    <input type="text" name="search" value="{{ request('search') }}" placeholder="Subject or code" class="rounded-lg border-gray-300 text-sm">
                 </div>
-            </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Class level</label>
+                    <select name="level" class="rounded-lg border-gray-300 text-sm">
+                        <option value="">All levels</option>
+                        @foreach(\App\Support\FormLabel::options() as $level => $label)
+                            <option value="{{ $level }}" @selected(request('level') == $level)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <x-button type="submit" icon="fas fa-filter">Filter</x-button>
+            </form>
+
+            <p class="text-sm text-gray-500">Core subjects (marked <span class="px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-800">Core</span>) are always counted in the JHS aggregate: English, Mathematics, Science and Social Studies.</p>
+
+            @forelse($subjects as $level => $levelSubjects)
+                <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                    <h3 class="px-6 py-3 bg-gray-50 border-b font-semibold text-gray-900">{{ \App\Support\FormLabel::label($level) }} <span class="text-sm text-gray-500 font-normal">({{ $levelSubjects->count() }} subjects)</span></h3>
+                    <table class="min-w-full text-sm divide-y divide-gray-100">
+                        @foreach($levelSubjects as $subject)
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-3 w-32 text-gray-500">{{ $subject->code }}</td>
+                                <td class="px-6 py-3 font-medium text-gray-900">
+                                    {{ $subject->title }}
+                                    @if($subject->is_core)<span class="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-100 text-blue-800">Core</span>@endif
+                                </td>
+                                <td class="px-6 py-3 text-gray-600">{{ $subject->teachers->pluck('name')->implode(', ') ?: '—' }}</td>
+                                <td class="px-6 py-3 text-right whitespace-nowrap space-x-3">
+                                    <a href="{{ route('subjects.results', $subject) }}" class="text-gray-600 hover:text-gray-900" title="Scores"><i class="fas fa-poll"></i></a>
+                                    @can('manage-subjects')
+                                        <a href="{{ route('subjects.edit', $subject) }}" class="text-indigo-600 hover:text-indigo-900" title="Edit"><i class="fas fa-edit"></i></a>
+                                        <form action="{{ route('subjects.destroy', $subject) }}" method="POST" class="inline">
+                                            @csrf @method('DELETE')
+                                            <button type="submit" class="text-red-600 hover:text-red-900" title="Delete" onclick="return confirm('Delete {{ $subject->title }} ({{ $subject->code }})?')"><i class="fas fa-trash"></i></button>
+                                        </form>
+                                    @endcan
+                                </td>
+                            </tr>
+                        @endforeach
+                    </table>
+                </div>
+            @empty
+                <div class="bg-white shadow-sm rounded-lg p-10 text-center text-gray-400">No subjects found.</div>
+            @endforelse
         </div>
     </div>
 </x-app-layout>

@@ -11,17 +11,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // The ZKTeco biometric device and the Speso payment webhook are external
-        // callers that cannot supply a Laravel CSRF token; both are authenticated
-        // by other means instead (device protocol / HMAC signature respectively).
-        $middleware->validateCsrfTokens(except: [
-            'iclock/*',
-            'webhooks/speso',
-        ]);
-
-        $middleware->alias([
-            'admission.applicant' => \App\Http\Middleware\EnsureApplicantIsAuthenticated::class,
-        ]);
+        //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -47,12 +47,12 @@ class SemesterController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'academic_year_id' => 'required|exists:academic_years,id',
-            'semester_number' => 'required|integer|min:1',
+            'semester_number' => 'required|integer|min:1|max:3',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
-            'required_payment_percentage' => 'nullable|numeric|min:0|max:100',
-            'registration_start_date' => 'nullable|date',
-            'registration_end_date' => 'nullable|date|after_or_equal:registration_start_date',
+            'vacation_date' => 'nullable|date',
+            'next_term_begins' => 'nullable|date',
+            'attendance_days' => 'nullable|integer|min:0|max:200',
         ]);
 
         if ($validator->fails()) {
@@ -68,24 +68,21 @@ class SemesterController extends Controller
 
         if ($existingSemester) {
             return redirect()->route('semesters.create')
-                ->withErrors(['semester_number' => 'A semester with this number already exists for the selected academic year.'])
+                ->withErrors(['semester_number' => 'That term already exists for the selected academic year.'])
                 ->withInput();
         }
 
-        $data = $request->all();
-        if (($data['required_payment_percentage'] ?? '') === '') {
-            $data['required_payment_percentage'] = null;
-        }
-        foreach (['registration_start_date', 'registration_end_date'] as $dateField) {
-            if (($data[$dateField] ?? '') === '') {
-                $data[$dateField] = null;
+        $data = $request->only(['name', 'academic_year_id', 'semester_number', 'start_date', 'end_date', 'vacation_date', 'next_term_begins', 'attendance_days']);
+        foreach (['vacation_date', 'next_term_begins', 'attendance_days'] as $field) {
+            if (($data[$field] ?? '') === '') {
+                $data[$field] = null;
             }
         }
 
         Semester::create($data);
 
         return redirect()->route('semesters.index')
-            ->with('success', 'Semester created successfully.');
+            ->with('success', 'Term created.');
     }
 
     /**
@@ -93,45 +90,7 @@ class SemesterController extends Controller
      */
     public function show(string $id)
     {
-        $semester = Semester::with('academicYear')->findOrFail($id);
-
-        // Get subjects for this semester
-        $subjects = Subject::where('semester_id', $id)
-            ->with('programmes')
-            ->orderBy('code')
-            ->get();
-
-        // Get result statistics for this semester. WASSCE grade_point is 1-9 (lower is
-        // better); C6 or better (<=6) counts as a pass/credit.
-        $resultStats = Result::where('semester_id', $id)
-            ->select(
-                DB::raw('COUNT(*) as total_results'),
-                DB::raw('AVG(score) as average_score'),
-                DB::raw('COUNT(CASE WHEN grade_point <= 6 THEN 1 END) as pass_count'),
-                DB::raw('COUNT(CASE WHEN grade_point > 6 THEN 1 END) as fail_count')
-            )
-            ->first();
-            
-        // WASSCE grade distribution for this semester: count of each grade (A1-F9)
-        // across every result recorded, in band order best-to-worst.
-        $gradeOrder = ['A1', 'B2', 'B3', 'C4', 'C5', 'C6', 'D7', 'E8', 'F9'];
-        $gradeCounts = DB::table('results')
-            ->select('grade', DB::raw('COUNT(*) as count'))
-            ->where('semester_id', $id)
-            ->whereNotNull('grade')
-            ->groupBy('grade')
-            ->pluck('count', 'grade');
-
-        $gpaDistribution = $gradeCounts->isEmpty()
-            ? collect()
-            : collect($gradeOrder)->mapWithKeys(fn ($grade) => [$grade => $gradeCounts[$grade] ?? 0]);
-            
-        return view('semesters.show', compact(
-            'semester',
-            'subjects',
-            'resultStats',
-            'gpaDistribution'
-        ));
+        return redirect()->route('semesters.edit', $id);
     }
 
     /**
@@ -151,12 +110,12 @@ class SemesterController extends Controller
             $smsLogId ? $sent++ : $skipped++;
         }
 
-        $message = "Sent grade notifications to {$sent} parent(s).";
+        $message = "Terminal report links texted to {$sent} parent(s).";
         if ($skipped > 0) {
-            $message .= " {$skipped} student(s) skipped (no emergency contact phone on file).";
+            $message .= " {$skipped} pupil(s) skipped (no parent phone number on file).";
         }
 
-        return redirect()->route('semesters.show', $semester)->with('success', $message);
+        return redirect()->route('semesters.index')->with('success', $message);
     }
 
     /**
@@ -180,12 +139,12 @@ class SemesterController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'academic_year_id' => 'required|exists:academic_years,id',
-            'semester_number' => 'required|integer|min:1',
+            'semester_number' => 'required|integer|min:1|max:3',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
-            'required_payment_percentage' => 'nullable|numeric|min:0|max:100',
-            'registration_start_date' => 'nullable|date',
-            'registration_end_date' => 'nullable|date|after_or_equal:registration_start_date',
+            'vacation_date' => 'nullable|date',
+            'next_term_begins' => 'nullable|date',
+            'attendance_days' => 'nullable|integer|min:0|max:200',
         ]);
 
         if ($validator->fails()) {
@@ -202,24 +161,21 @@ class SemesterController extends Controller
 
         if ($existingSemester) {
             return redirect()->route('semesters.edit', $id)
-                ->withErrors(['semester_number' => 'A semester with this number already exists for the selected academic year.'])
+                ->withErrors(['semester_number' => 'That term already exists for the selected academic year.'])
                 ->withInput();
         }
 
-        $data = $request->all();
-        if (($data['required_payment_percentage'] ?? '') === '') {
-            $data['required_payment_percentage'] = null;
-        }
-        foreach (['registration_start_date', 'registration_end_date'] as $dateField) {
-            if (($data[$dateField] ?? '') === '') {
-                $data[$dateField] = null;
+        $data = $request->only(['name', 'academic_year_id', 'semester_number', 'start_date', 'end_date', 'vacation_date', 'next_term_begins', 'attendance_days']);
+        foreach (['vacation_date', 'next_term_begins', 'attendance_days'] as $field) {
+            if (($data[$field] ?? '') === '') {
+                $data[$field] = null;
             }
         }
 
         $semester->update($data);
 
         return redirect()->route('semesters.index')
-            ->with('success', 'Semester updated successfully.');
+            ->with('success', 'Term updated.');
     }
 
     /**
@@ -287,7 +243,7 @@ class SemesterController extends Controller
             DB::commit();
             
             return redirect()->route('semesters.index')
-                ->with('success', 'Current semester set successfully.');
+                ->with('success', "{$semester->name} ({$academicYear->name}) is now the current term.");
                 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -295,47 +251,6 @@ class SemesterController extends Controller
             return redirect()->route('semesters.index')
                 ->with('error', 'An error occurred: ' . $e->getMessage());
         }
-    }
-    
-    /**
-     * Toggle subject registration open/closed for a semester.
-     */
-    public function toggleRegistration(Semester $semester)
-    {
-        $semester->update(['registration_open' => !$semester->registration_open]);
-
-        $status = $semester->registration_open ? 'opened' : 'closed';
-
-        return redirect()->route('semesters.index')
-            ->with('success', "Subject registration {$status} for {$semester->name}.");
-    }
-
-    /**
-     * Toggle the biometric check-in window open/closed for a semester.
-     */
-    public function toggleBiometricWindow(Semester $semester)
-    {
-        $semester->update(['biometric_window_open' => !$semester->biometric_window_open]);
-
-        $status = $semester->biometric_window_open ? 'opened' : 'closed';
-
-        return redirect()->route('semesters.index')
-            ->with('success', "Biometric check-in window {$status} for {$semester->name}.");
-    }
-
-    /**
-     * List subjects for a semester.
-     */
-    public function subjects(string $id)
-    {
-        $semester = Semester::with('academicYear')->findOrFail($id);
-
-        $subjects = Subject::where('semester_id', $id)
-            ->with('programmes')
-            ->orderBy('code')
-            ->paginate(20);
-
-        return view('semesters.subjects', compact('semester', 'subjects'));
     }
     
     /**

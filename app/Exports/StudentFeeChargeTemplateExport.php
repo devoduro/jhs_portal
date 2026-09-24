@@ -13,8 +13,8 @@ class StudentFeeChargeTemplateExport implements FromArray, WithHeadings
     public function array(): array
     {
         return [
-            ['2021SLE0012', 'resit', 50.00, '2025/2026', 'Resit - MTH 101'],
-            ['2020SLE0045', 'graduation', 150.00, '2025/2026', ''],
+            ['SCH/2026/001', 'transport', 450.00, '2026/2027', 'First Term', 'Bus - Kasoa route'],
+            ['SCH/2026/002', 'uniform', 180.00, '2026/2027', 'First Term', '2 sets'],
         ];
     }
 
@@ -24,6 +24,6 @@ class StudentFeeChargeTemplateExport implements FromArray, WithHeadings
      */
     public function headings(): array
     {
-        return ['index_number', 'category', 'amount', 'academic_year', 'notes'];
+        return ['index_number', 'category', 'amount', 'academic_year', 'term', 'notes'];
     }
 }

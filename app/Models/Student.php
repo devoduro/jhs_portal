@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Services\FeeLedgerService;
+use App\Support\FormLabel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -156,157 +156,151 @@ class Student extends Model
     }
 
     /**
-     * Get the total outstanding arrears carried in from all previous years - i.e. the
-     * ledger's overall running balance minus the current academic year's own balance, so it
-     * reflects the closing balance of the previous year(s) rather than a stale/manually-entered
-     * arrear figure that never gets updated when a year rolls over without a payment shortfall
-     * being converted into a new arrear row.
-     * This is informational only and does not affect the course-registration fee gate.
+     * Term-by-term progress records (attendance, conduct, remarks) for the terminal report.
      */
-    public function totalArrears(): float
+    public function termReports(): HasMany
     {
-        $balanceDue = FeeLedgerService::ledgerFor($this)[0]['balance'] ?? 0.0;
-
-        $currentYear = AcademicYear::where('is_current', true)->first();
-        $currentYearBalance = $currentYear ? $this->feeBalance($currentYear) : 0.0;
-
-        return $balanceDue - $currentYearBalance;
+        return $this->hasMany(TermReport::class);
     }
 
     /**
-     * Determine whether the student has completed biometric registration for a given semester.
+     * Everything billed to this pupil (term bills and one-off charges), optionally narrowed
+     * to one academic year or one term.
      */
-    public function hasBiometricVerification(Semester $semester): bool
+    public function billedAmount(?AcademicYear $academicYear = null, ?Semester $term = null): float
     {
-        return $this->biometricRegistrations()
-            ->where('semester_id', $semester->id)
-            ->exists();
-    }
+        $query = $this->feeCharges();
 
-    /**
-     * Get the fee structure that applies to this student for a given academic year and
-     * category (defaults to the base tuition/school fee - the one that gates course
-     * registration). Matches on programme + level first, falling back to a
-     * programme-wide (null level) entry.
-     */
-    public function applicableFeeStructure(AcademicYear $academicYear, string $category = 'tuition'): ?FeeStructure
-    {
-        $query = FeeStructure::where('academic_year_id', $academicYear->id)
-            ->where('programme_id', $this->programme_id)
-            ->where('category', $category);
-
-        if ($this->level !== null) {
-            $structure = (clone $query)->where('level', $this->level)->first();
-            if ($structure) {
-                return $structure;
-            }
+        if ($term) {
+            $query->where('semester_id', $term->id);
+        } elseif ($academicYear) {
+            $query->where('academic_year_id', $academicYear->id);
         }
 
-        return $query->whereNull('level')->first();
+        return (float) $query->sum('amount');
     }
 
     /**
-     * Get the total amount the student has paid for a given academic year.
+     * Payments received, optionally narrowed to one academic year or one term.
      */
-    public function totalPaid(AcademicYear $academicYear): float
+    public function paidAmount(?AcademicYear $academicYear = null, ?Semester $term = null): float
     {
-        return (float) $this->payments()
-            ->where('academic_year_id', $academicYear->id)
-            ->sum('amount');
+        $query = $this->payments();
+
+        if ($term) {
+            $query->where('semester_id', $term->id);
+        } elseif ($academicYear) {
+            $query->where('academic_year_id', $academicYear->id);
+        }
+
+        return (float) $query->sum('amount');
     }
 
     /**
-     * Get the "school fee" figure for a given academic year - the base tuition fee structure
-     * plus any additional tuition-category charges billed to this student that year (e.g. a
-     * correction uploaded via the fee charges tool). Deliberately excludes graduation/resit/
-     * other categories, which are separate one-off charges shown on their own in the ledger
-     * rather than folded into the headline tuition figure shown across /fees and /student/fees.
+     * What the pupil owes right now across every term: all bills + arrears brought forward
+     * - all payments. Negative means the pupil is in credit.
+     */
+    public function outstandingBalance(): float
+    {
+        return $this->billedAmount()
+            + (float) $this->arrears()->sum('amount')
+            - $this->paidAmount();
+    }
+
+    /**
+     * Balance brought forward into a term - the outstanding balance excluding that term's
+     * own bill and payments (i.e. what was still owed from earlier terms).
+     */
+    public function balanceBroughtForward(Semester $term): float
+    {
+        return $this->outstandingBalance() - ($this->billedAmount(null, $term) - $this->paidAmount(null, $term));
+    }
+
+    /**
+     * The fee structure lines (tuition, feeding, PTA levy...) that apply to this pupil's
+     * class level for a term.
+     */
+    public function applicableFeeItems(Semester $term): \Illuminate\Support\Collection
+    {
+        if ($this->level === null) {
+            return collect();
+        }
+
+        return FeeStructure::where('semester_id', $term->id)
+            ->where('level', $this->level)
+            ->get();
+    }
+
+    /**
+     * Amount billed for an academic year (all terms, all fee items).
      */
     public function tuitionFeeAmount(AcademicYear $academicYear): float
     {
-        $structure = $this->applicableFeeStructure($academicYear);
-        $structureAmount = $structure ? (float) $structure->amount : 0.0;
+        return $this->billedAmount($academicYear);
+    }
 
-        $chargesAmount = (float) $this->feeCharges()
-            ->where('academic_year_id', $academicYear->id)
-            ->where('category', 'tuition')
-            ->sum('amount');
-
-        return $structureAmount + $chargesAmount;
+    public function totalPaid(AcademicYear $academicYear): float
+    {
+        return $this->paidAmount($academicYear);
     }
 
     /**
-     * Get the student's outstanding fee balance for a given academic year: Bill Amount + All
-     * Arrears - Payments. Arrears are entered as a running carried-forward adjustment (positive
-     * = still-owed debt, negative = credit/overpayment) rather than scoped to a specific year's
-     * own activity, so every arrear row counts here regardless of which academic_year_id it
-     * happens to be tagged with. Not floored at zero - a large enough credit correctly shows as
-     * a negative balance here, same as the other balance figures on the account.
+     * Kept for older screens: the overall outstanding balance (not limited to the year).
      */
-    public function feeBalance(AcademicYear $academicYear): float
+    public function feeBalance(?AcademicYear $academicYear = null): float
     {
-        $feeAmount = $this->tuitionFeeAmount($academicYear);
+        return $this->outstandingBalance();
+    }
 
-        if ($feeAmount <= 0) {
-            return 0.0;
+    /**
+     * Arrears carried in from before the current academic year.
+     */
+    public function totalArrears(): float
+    {
+        $currentYear = AcademicYear::where('is_current', true)->first();
+
+        if (!$currentYear) {
+            return $this->outstandingBalance();
         }
 
-        $allArrears = (float) $this->arrears()->sum('amount');
-
-        return $feeAmount + $allArrears - $this->totalPaid($academicYear);
+        return $this->outstandingBalance() - ($this->billedAmount($currentYear) - $this->paidAmount($currentYear));
     }
 
-    /**
-     * Get the percentage of the applicable fee the student has paid for a given academic year.
-     */
     public function paymentPercentage(AcademicYear $academicYear): float
     {
-        $feeAmount = $this->tuitionFeeAmount($academicYear);
+        $bill = $this->billedAmount($academicYear);
 
-        if ($feeAmount <= 0) {
+        if ($bill <= 0) {
             return 0.0;
         }
 
-        return round(($this->totalPaid($academicYear) / $feeAmount) * 100, 2);
+        return round(($this->paidAmount($academicYear) / $bill) * 100, 2);
     }
 
     /**
-     * Determine whether the student has paid enough of their fees to register courses for the
-     * given semester. Eligible when the student's Total Balance Due (the full ledger balance -
-     * arrears, all years' tuition, graduation/resit charges, everything) is no more than the
-     * portion of this year's bill left unpaid by the required percentage, i.e.
-     * balanceDue <= billAmount - (billAmount * required%). Using the ledger-wide balance (not
-     * just this year's tuition) means credit carried forward from previous years counts toward
-     * meeting the threshold.
+     * Basic schools don't gate anything on fees - kept so older call sites keep working.
      */
     public function meetsRegistrationThreshold(Semester $semester): bool
     {
-        $required = (float) ($semester->required_payment_percentage ?? 0);
+        return true;
+    }
 
-        if ($required <= 0) {
-            return true;
-        }
-
-        $billAmount = $this->tuitionFeeAmount($semester->academicYear);
-
-        if ($billAmount <= 0) {
-            return false;
-        }
-
-        $maxAllowedBalance = $billAmount - ($billAmount * $required / 100);
-        $balanceDue = FeeLedgerService::ledgerFor($this)[0]['balance'] ?? 0.0;
-
-        return $balanceDue <= $maxAllowedBalance;
+    public function levelLabel(): string
+    {
+        return FormLabel::label($this->level);
     }
 
     /**
-     * Sum of grade points (1-9, lower is better) for this student's best 6 subjects
-     * in a given scope (semester and/or academic year), per WASSCE aggregate scoring
-     * convention. Returns null if fewer than 6 graded results exist in that scope -
-     * an aggregate is undefined until 6 subjects are graded.
+     * BECE-style aggregate for a JHS pupil in one term: the grade values (1 best - 9 worst)
+     * of the four core subjects (English, Maths, Science, Social Studies) plus the best two
+     * other subjects. Null when the pupil isn't in JHS or has fewer than six graded subjects.
      */
     public function calculateAggregate(?int $semesterId = null, ?int $academicYearId = null): ?int
     {
+        if (!FormLabel::isJhs($this->level)) {
+            return null;
+        }
+
         $results = $this->bestSixResults($semesterId, $academicYearId);
 
         if ($results->count() < 6) {
@@ -317,12 +311,12 @@ class Student extends Model
     }
 
     /**
-     * The Result rows behind the current best-6 aggregate (for display on
-     * transcripts/result slips - which subjects counted toward it).
+     * The results counted toward the BECE-style aggregate: all core subjects (up to four)
+     * plus the best of the rest, six in total.
      */
     public function bestSixResults(?int $semesterId = null, ?int $academicYearId = null): \Illuminate\Support\Collection
     {
-        $query = $this->results();
+        $query = $this->results()->with('subject')->whereNotNull('grade_point');
 
         if ($semesterId) {
             $query->where('semester_id', $semesterId);
@@ -332,31 +326,19 @@ class Student extends Model
             $query->where('academic_year_id', $academicYearId);
         }
 
-        return $query->get()
-            ->sortBy('grade_point')
-            ->take(6)
-            ->values();
+        $results = $query->get();
+
+        $core = $results->filter(fn ($r) => $r->subject?->is_core)->sortBy('grade_point')->take(4);
+        $others = $results->reject(fn ($r) => $core->contains('id', $r->id))->sortBy('grade_point');
+
+        return $core->concat($others->take(6 - $core->count()))->values();
     }
 
     /**
-     * WASSCE-style overall standing label derived from the current best-6 aggregate.
-     * Fixed convention (not admin-configurable, unlike grade bands): Division 1 = 6-12,
-     * Division 2 = 13-24, Division 3 = 25-36, Division 4 = 37+. Returns null if the
-     * aggregate itself is undefined (fewer than 6 graded subjects).
+     * Kept for older screens - basic schools report positions, not WASSCE divisions.
      */
     public function getGradeStanding(): ?string
     {
-        $aggregate = $this->calculateAggregate();
-
-        if ($aggregate === null) {
-            return null;
-        }
-
-        return match (true) {
-            $aggregate <= 12 => 'Division 1',
-            $aggregate <= 24 => 'Division 2',
-            $aggregate <= 36 => 'Division 3',
-            default => 'Division 4',
-        };
+        return null;
     }
 }

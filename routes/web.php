@@ -1,23 +1,16 @@
 <?php
 
 use App\Http\Controllers\ArrearsController;
-use App\Http\Controllers\BiometricAdmsController;
 use App\Http\Controllers\BulkResultController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FeeStructureController;
-use App\Http\Controllers\GradeDistributionController;
-use App\Http\Controllers\PaymentUploadController;
-use App\Http\Controllers\ProgrammeController;
-use App\Http\Controllers\ReferenceNumberController;
-use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ResultController;
 use App\Http\Controllers\SemesterController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentPaymentController;
-use App\Http\Controllers\TranscriptController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ActivityLogController;
 use Illuminate\Support\Facades\Route;
@@ -49,46 +42,12 @@ Route::middleware('guest')->group(function () {
 Route::post('logout', [\App\Http\Controllers\Auth\LoginController::class, 'logout'])->name('logout');
 Route::post('student/logout', [\App\Http\Controllers\Auth\StudentAuthController::class, 'logout'])->name('student.logout');
 
-// ZKTeco Biometric Device Push (ADMS protocol) - unauthenticated, device-facing
-Route::get('iclock/cdata', [BiometricAdmsController::class, 'handshake'])->name('iclock.handshake');
-Route::post('iclock/cdata', [BiometricAdmsController::class, 'store'])->name('iclock.store');
-Route::get('iclock/getrequest', [BiometricAdmsController::class, 'getRequest'])->name('iclock.getrequest');
-
 // Public report card - no login required, only reachable via a signed URL texted to a
 // parent (see GradeNotificationService). The `signed` middleware rejects any request
 // whose signature is missing, tampered with, or past its expiry.
 Route::get('report-card/{student}', [\App\Http\Controllers\ReportCardController::class, 'show'])
     ->name('report-card.show')
     ->middleware('signed');
-
-// Speso mobile money webhook - unauthenticated, signature-verified inside the controller
-// (see SpesoWebhookController::hasValidSignature).
-Route::post('webhooks/speso', \App\Http\Controllers\SpesoWebhookController::class)->name('webhooks.speso');
-
-// Online Admission Portal - public applicant-facing flow: verify placement, pay the
-// admission fee via Speso, set a password, then complete a profile. Deliberately its
-// own session-based auth (see EnsureApplicantIsAuthenticated), not the app's normal
-// Auth facade/guard, since applicants are unverified/temporary until admitted.
-Route::prefix('admission')->name('admission.')->group(function () {
-    Route::get('/', [\App\Http\Controllers\AdmissionPortalController::class, 'showVerifyForm'])->name('verify');
-    Route::post('/verify', [\App\Http\Controllers\AdmissionPortalController::class, 'verify'])->name('verify.submit');
-    Route::get('/{indexNumber}/pay', [\App\Http\Controllers\AdmissionPortalController::class, 'showPayForm'])->name('pay');
-    Route::post('/{indexNumber}/pay', [\App\Http\Controllers\AdmissionPortalController::class, 'pay'])->name('pay.submit');
-    Route::get('/{indexNumber}/pay/waiting', [\App\Http\Controllers\AdmissionPortalController::class, 'showWaiting'])->name('pay.waiting');
-    Route::get('/{indexNumber}/pay/status', [\App\Http\Controllers\AdmissionPortalController::class, 'paymentStatus'])->name('pay.status');
-    Route::get('/{indexNumber}/set-password', [\App\Http\Controllers\Auth\ApplicantAuthController::class, 'showSetPasswordForm'])->name('set-password.show');
-    Route::post('/{indexNumber}/set-password', [\App\Http\Controllers\Auth\ApplicantAuthController::class, 'setPassword'])->name('set-password.submit');
-    Route::get('/login', [\App\Http\Controllers\Auth\ApplicantAuthController::class, 'showLoginForm'])->name('login');
-    Route::post('/login', [\App\Http\Controllers\Auth\ApplicantAuthController::class, 'login'])->name('login.submit');
-    Route::post('/logout', [\App\Http\Controllers\Auth\ApplicantAuthController::class, 'logout'])->name('logout');
-
-    Route::middleware('admission.applicant')->group(function () {
-        Route::get('/dashboard', [\App\Http\Controllers\ApplicantPortalController::class, 'dashboard'])->name('dashboard');
-        Route::get('/profile', [\App\Http\Controllers\ApplicantPortalController::class, 'showProfileForm'])->name('profile.edit');
-        Route::post('/profile', [\App\Http\Controllers\ApplicantPortalController::class, 'updateProfile'])->name('profile.update');
-        Route::get('/print-slip', [\App\Http\Controllers\ApplicantPortalController::class, 'printSlip'])->name('print-slip');
-    });
-});
 
 // Guest Routes
 Route::middleware(['guest'])->group(function () {
@@ -106,7 +65,6 @@ Route::middleware(['auth', 'admin'])->group(function () {
     });
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/admin/dashboard', [DashboardController::class, 'index'])->name('admin.dashboard');
-    Route::get('/grade-distribution', [GradeDistributionController::class, 'index'])->name('grade-distribution.index');
 });
 
 // Protected Routes
@@ -132,13 +90,6 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/my-profile', [\App\Http\Controllers\TeacherPortalController::class, 'updateProfile'])->name('teacher.profile.update');
     Route::get('/my-timetable', [\App\Http\Controllers\TeacherPortalController::class, 'timetable'])->name('teacher.timetable');
     Route::get('/my-timetable/print', [\App\Http\Controllers\TeacherPortalController::class, 'printTimetable'])->name('teacher.timetable.print');
-    Route::get('/my-house', [\App\Http\Controllers\TeacherPortalController::class, 'myHouses'])->name('teacher.houses');
-    Route::get('/my-house/attendance', [\App\Http\Controllers\TeacherPortalController::class, 'houseAttendance'])->name('teacher.house-attendance');
-    Route::get('/my-house/attendance/print', [\App\Http\Controllers\TeacherPortalController::class, 'printHouseAttendance'])->name('teacher.house-attendance.print');
-    Route::get('/my-house/exeats', [\App\Http\Controllers\TeacherPortalController::class, 'houseExeats'])->name('teacher.house-exeats');
-    Route::get('/my-house/exeats/create', [\App\Http\Controllers\TeacherPortalController::class, 'createHouseExeat'])->name('teacher.house-exeats.create');
-    Route::post('/my-house/exeats', [\App\Http\Controllers\TeacherPortalController::class, 'storeHouseExeat'])->name('teacher.house-exeats.store');
-
     // Students
     Route::middleware('permission:manage-students')->group(function () {
         Route::get('/students/{id}/create-account', [StudentController::class, 'createUserAccount'])->name('students.create-account');
@@ -151,24 +102,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/students/export/excel', [StudentController::class, 'exportExcel'])->name('students.export.excel');
         Route::get('/students/export/pdf', [StudentController::class, 'exportPdf'])->name('students.export.pdf');
         Route::get('/students-import-template', [StudentController::class, 'downloadTemplate'])->name('students.import.template');
-    });
-
-    // Student Houses (bulk assignment of students to houses)
-    Route::middleware('permission:manage-students')->group(function () {
-        Route::get('/student-houses', [\App\Http\Controllers\StudentHouseController::class, 'index'])->name('student-houses.index');
-        Route::get('/student-houses/upload', [\App\Http\Controllers\StudentHouseController::class, 'uploadForm'])->name('student-houses.upload');
-        Route::post('/student-houses/import', [\App\Http\Controllers\StudentHouseController::class, 'import'])->name('student-houses.import');
-        Route::get('/student-houses/template', [\App\Http\Controllers\StudentHouseController::class, 'downloadTemplate'])->name('student-houses.template');
-        Route::get('/student-houses/print', [\App\Http\Controllers\StudentHouseController::class, 'print'])->name('student-houses.print');
-    });
-
-    // Houses (manage house entities and their house masters)
-    Route::middleware('permission:manage-houses')->group(function () {
-        Route::resource('houses', \App\Http\Controllers\HouseController::class)->except(['show']);
-        Route::get('/exeats', [\App\Http\Controllers\ExeatController::class, 'index'])->name('exeats.index');
-        Route::get('/exeats/create', [\App\Http\Controllers\ExeatController::class, 'create'])->name('exeats.create');
-        Route::post('/exeats', [\App\Http\Controllers\ExeatController::class, 'store'])->name('exeats.store');
-        Route::delete('/exeats/{exeat}', [\App\Http\Controllers\ExeatController::class, 'destroy'])->name('exeats.destroy');
     });
 
     // Student Directory - read-only, no grades (e.g. for Accountant)
@@ -198,8 +131,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/subjects/{subject}/students', [SubjectController::class, 'students'])->name('subjects.students');
         Route::get('/subjects/{subject}/students/export', [SubjectController::class, 'exportStudents'])->name('subjects.students.export');
         Route::get('/subjects/{subject}/students/attendance', [SubjectController::class, 'printAttendance'])->name('subjects.students.attendance');
-        Route::get('/subjects/{subject}/students/add', [SubjectController::class, 'addStudentsForm'])->name('subjects.students.add');
-        Route::post('/subjects/{subject}/students/add', [SubjectController::class, 'addStudents'])->name('subjects.students.store');
         Route::get('/subjects/{subject}/results', [SubjectController::class, 'results'])->name('subjects.results');
         Route::get('/subjects/{subject}/export', [SubjectController::class, 'export'])->name('subjects.export');
 
@@ -237,7 +168,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/bulkresults/download-template', [ResultController::class, 'downloadTemplate'])->name('results.download-template');
     });
 
-    Route::middleware('permission:manage-results|view-results')->group(function () {
+    Route::middleware('permission:manage-results|view-results|enter-scores|manage-term-reports')->group(function () {
         Route::get('/results/search', [ResultController::class, 'search'])->name('results.search');
         Route::get('/results/filter/academic-year', [ResultController::class, 'filterByAcademicYear'])->name('results.filter.academic-year');
         Route::get('/results/filter/semester', [ResultController::class, 'filterBySemester'])->name('results.filter.semester');
@@ -253,34 +184,39 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/report-cards/print', [\App\Http\Controllers\ReportCardController::class, 'bulkPrint'])->name('report-cards.bulk-print');
     });
 
-    // Programmes
-    Route::middleware('permission:manage-programmes')->group(function () {
-        Route::resource('programmes', ProgrammeController::class);
-        Route::get('/programmes/search', [ProgrammeController::class, 'search'])->name('programmes.search');
-        Route::get('/programmes/{programme}/subjects', [ProgrammeController::class, 'subjects'])->name('programmes.subjects');
-        Route::get('/programmes/{programme}/export', [ProgrammeController::class, 'export'])->name('programmes.export');
+    // Terminal report score entry (class score + exam score per subject) and class broadsheet.
+    // Teachers are limited to their own classes/subjects inside ScoreSheetController.
+    Route::middleware('permission:enter-scores|manage-results')->group(function () {
+        Route::get('/scores', [\App\Http\Controllers\ScoreSheetController::class, 'index'])->name('scores.index');
+        Route::get('/scores/{classGroup}/broadsheet', [\App\Http\Controllers\ScoreSheetController::class, 'broadsheet'])->name('scores.broadsheet');
+        Route::get('/scores/{classGroup}/{subject}', [\App\Http\Controllers\ScoreSheetController::class, 'sheet'])->name('scores.sheet');
+        Route::post('/scores/{classGroup}/{subject}', [\App\Http\Controllers\ScoreSheetController::class, 'save'])->name('scores.save');
+    });
+
+    // Attendance, conduct and remarks for the terminal report (class teachers / head teacher).
+    Route::middleware('permission:manage-term-reports')->group(function () {
+        Route::get('/term-reports', [\App\Http\Controllers\TermReportController::class, 'index'])->name('term-reports.index');
+        Route::post('/term-reports/{classGroup}', [\App\Http\Controllers\TermReportController::class, 'save'])->name('term-reports.save');
     });
 
     // Semesters
     Route::middleware('permission:manage-semesters')->group(function () {
         Route::get('/semesters/filter/academic-year', [SemesterController::class, 'filterByAcademicYear'])->name('semesters.filter.academic-year');
         Route::put('/semesters/{semester}/set-current', [SemesterController::class, 'setCurrent'])->name('semesters.set-current');
-        Route::put('/semesters/{semester}/toggle-registration', [SemesterController::class, 'toggleRegistration'])->name('semesters.toggle-registration');
-        Route::put('/semesters/{semester}/toggle-biometric-window', [SemesterController::class, 'toggleBiometricWindow'])->name('semesters.toggle-biometric-window');
-        Route::get('/semesters/{semester}/subjects', [SemesterController::class, 'subjects'])->name('semesters.subjects');
         Route::get('/semesters/{semester}/results', [SemesterController::class, 'results'])->name('semesters.results');
         Route::resource('semesters', SemesterController::class);
     });
 
     // Fee Management
     Route::middleware('permission:manage-fees')->group(function () {
-        // Fee structure upload routes must be registered before the resource's /fee-structures/{fee_structure} wildcard.
-        Route::get('/fee-structures/upload', [FeeStructureController::class, 'uploadForm'])->name('fee-structures.upload');
-        Route::post('/fee-structures/import', [FeeStructureController::class, 'import'])->name('fee-structures.import');
-        Route::get('/fee-structures/template', [FeeStructureController::class, 'downloadTemplate'])->name('fee-structures.template');
-        Route::resource('fee-structures', FeeStructureController::class)->except(['show']);
+        // Term fee schedule (fee items x class levels, per term) and term billing.
+        Route::get('/fee-structures', [FeeStructureController::class, 'index'])->name('fee-structures.index');
+        Route::post('/fee-structures/save', [FeeStructureController::class, 'save'])->name('fee-structures.save');
+        Route::post('/fee-structures/copy', [FeeStructureController::class, 'copy'])->name('fee-structures.copy');
+        Route::get('/fees/billing', [FeeStructureController::class, 'billingForm'])->name('fees.billing');
+        Route::post('/fees/billing', [FeeStructureController::class, 'bill'])->name('fees.billing.store');
 
-        // Specific student fee charges (graduation fee, resit fee, etc. billed to individual students).
+        // Items billed to pupils (term bills + one-off items like bus fee, uniform, discounts).
         Route::get('/fees/charges', [\App\Http\Controllers\StudentFeeChargeController::class, 'index'])->name('fees.charges.index');
         Route::get('/fees/charges/upload', [\App\Http\Controllers\StudentFeeChargeController::class, 'uploadForm'])->name('fees.charges.upload');
         Route::post('/fees/charges/import', [\App\Http\Controllers\StudentFeeChargeController::class, 'import'])->name('fees.charges.import');
@@ -288,16 +224,18 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/fees/charges/bulk-destroy', [\App\Http\Controllers\StudentFeeChargeController::class, 'bulkDestroy'])->name('fees.charges.bulk-destroy');
         Route::delete('/fees/charges/{charge}', [\App\Http\Controllers\StudentFeeChargeController::class, 'destroy'])->name('fees.charges.destroy');
 
-        // Fee categories (tuition, graduation, resit, and any custom ones an admin adds).
+        // Fee items (tuition, feeding, PTA levy, and any custom ones an admin adds).
         Route::post('/fees/categories', [\App\Http\Controllers\FeeCategoryController::class, 'store'])->name('fees.categories.store');
         Route::delete('/fees/categories/{category}', [\App\Http\Controllers\FeeCategoryController::class, 'destroy'])->name('fees.categories.destroy');
 
         Route::get('/fees', [StudentPaymentController::class, 'index'])->name('fees.index');
+        Route::post('/fees/reminders', [StudentPaymentController::class, 'sendReminders'])->name('fees.reminders');
         Route::get('/fees/export/excel', [StudentPaymentController::class, 'exportExcel'])->name('fees.export.excel');
         Route::get('/fees/export/pdf', [StudentPaymentController::class, 'exportPdf'])->name('fees.export.pdf');
         Route::get('/fees/report', [StudentPaymentController::class, 'report'])->name('fees.report');
         Route::get('/fees/report/print', [StudentPaymentController::class, 'printReport'])->name('fees.report.print');
         Route::get('/fees/report/export', [StudentPaymentController::class, 'exportReport'])->name('fees.report.export');
+        Route::get('/fees/receipts/{payment}', [StudentPaymentController::class, 'receipt'])->name('fees.receipt');
 
         // Arrears (debtors list) routes must be registered before the /fees/{student} wildcard below.
         Route::get('/fees/arrears', [ArrearsController::class, 'index'])->name('fees.arrears.index');
@@ -307,37 +245,12 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/fees/arrears/bulk-destroy', [ArrearsController::class, 'bulkDestroy'])->name('fees.arrears.bulk-destroy');
         Route::delete('/fees/arrears/{arrear}', [ArrearsController::class, 'destroy'])->name('fees.arrears.destroy');
 
-        // Reference numbers and payment upload routes must also be registered before /fees/{student}.
-        Route::get('/fees/reference-numbers', [ReferenceNumberController::class, 'index'])->name('fees.reference-numbers.index');
-        Route::get('/fees/reference-numbers/upload', [ReferenceNumberController::class, 'uploadForm'])->name('fees.reference-numbers.upload');
-        Route::post('/fees/reference-numbers/import', [ReferenceNumberController::class, 'import'])->name('fees.reference-numbers.import');
-        Route::get('/fees/reference-numbers/template', [ReferenceNumberController::class, 'downloadTemplate'])->name('fees.reference-numbers.template');
-
-        Route::get('/fees/payments/upload', [PaymentUploadController::class, 'uploadForm'])->name('fees.payments.upload');
-        Route::post('/fees/payments/import', [PaymentUploadController::class, 'import'])->name('fees.payments.import');
-        Route::get('/fees/payments/template', [PaymentUploadController::class, 'downloadTemplate'])->name('fees.payments.template');
-        Route::delete('/fees/payments/bulk-destroy', [PaymentUploadController::class, 'bulkDestroy'])->name('fees.payments.bulk-destroy');
-
         Route::get('/fees/{student}', [StudentPaymentController::class, 'show'])->name('fees.show');
+        Route::post('/fees/{student}/charges', [\App\Http\Controllers\StudentFeeChargeController::class, 'store'])->name('fees.charges.store');
         Route::get('/fees/{student}/print', [StudentPaymentController::class, 'printLedger'])->name('fees.print');
         Route::post('/fees/{student}/payments', [StudentPaymentController::class, 'store'])->name('fees.payments.store');
         Route::put('/fees/payments/{payment}', [StudentPaymentController::class, 'update'])->name('fees.payments.update');
         Route::delete('/fees/payments/{payment}', [StudentPaymentController::class, 'destroy'])->name('fees.payments.destroy');
-    });
-
-    // Biometric Registration
-    Route::middleware('permission:manage-biometric')->group(function () {
-        Route::resource('biometric-devices', \App\Http\Controllers\BiometricDeviceController::class)->except(['show']);
-        Route::get('/biometric-verifications', [\App\Http\Controllers\BiometricRegistrationController::class, 'index'])->name('biometric-verifications.index');
-        Route::post('/biometric-verifications/bulk-verify', [\App\Http\Controllers\BiometricRegistrationController::class, 'bulkStore'])->name('biometric-verifications.bulk-verify');
-        Route::get('/biometric-verifications/{student}', [\App\Http\Controllers\BiometricRegistrationController::class, 'show'])->name('biometric-verifications.show');
-        Route::post('/biometric-verifications/{student}', [\App\Http\Controllers\BiometricRegistrationController::class, 'store'])->name('biometric-verifications.store');
-        Route::delete('/biometric-verifications/entry/{registration}', [\App\Http\Controllers\BiometricRegistrationController::class, 'destroy'])->name('biometric-verifications.destroy');
-
-        // Campus gate attendance (in/out), derived from the same device punches above.
-        Route::get('/campus-attendance', [\App\Http\Controllers\CampusAttendanceController::class, 'index'])->name('campus-attendance.index');
-        Route::get('/campus-attendance/print', [\App\Http\Controllers\CampusAttendanceController::class, 'print'])->name('campus-attendance.print');
-        Route::get('/campus-attendance/export', [\App\Http\Controllers\CampusAttendanceController::class, 'export'])->name('campus-attendance.export');
     });
 
     // Classes
@@ -354,20 +267,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/promotions', [\App\Http\Controllers\PromotionController::class, 'index'])->name('promotions.index');
         Route::post('/promotions/preview', [\App\Http\Controllers\PromotionController::class, 'preview'])->name('promotions.preview');
         Route::post('/promotions', [\App\Http\Controllers\PromotionController::class, 'store'])->name('promotions.store');
-    });
-
-    // Online Admissions (review side) - import the placement list, review submitted
-    // applications, and admit/reject. The public applicant-facing flow is registered
-    // near the top of this file under the admission. prefix.
-    Route::middleware('permission:manage-admissions')->group(function () {
-        Route::get('/admissions/import', [\App\Http\Controllers\AdmissionController::class, 'importForm'])->name('admissions.import.form');
-        Route::post('/admissions/import', [\App\Http\Controllers\AdmissionController::class, 'import'])->name('admissions.import.store');
-        Route::get('/admissions/import/template', [\App\Http\Controllers\AdmissionController::class, 'downloadTemplate'])->name('admissions.import.template');
-        Route::post('/admissions/clear-unpaid', [\App\Http\Controllers\AdmissionController::class, 'clearUnpaid'])->name('admissions.clear-unpaid');
-        Route::post('/admissions/settings', [\App\Http\Controllers\AdmissionController::class, 'updateSettings'])->name('admissions.settings');
-        Route::post('/admissions/{admission}/admit', [\App\Http\Controllers\AdmissionController::class, 'admit'])->name('admissions.admit');
-        Route::post('/admissions/{admission}/reject', [\App\Http\Controllers\AdmissionController::class, 'reject'])->name('admissions.reject');
-        Route::resource('admissions', \App\Http\Controllers\AdmissionController::class)->only(['index', 'show']);
     });
 
     // Timetable
@@ -420,26 +319,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/assignments/{assignment}/submissions/{submission}/grade', [\App\Http\Controllers\AssignmentController::class, 'gradeSubmission'])->name('assignments.submissions.grade');
     });
 
-    // Transcripts
-    Route::middleware('permission:manage-transcripts')->group(function () {
-        Route::get('/transcripts', [TranscriptController::class, 'index'])->name('transcripts.index');
-        Route::get('/transcripts/create', [TranscriptController::class, 'create'])->name('transcripts.create');
-        Route::post('/transcripts', [TranscriptController::class, 'store'])->name('transcripts.store');
-        Route::get('/transcripts/{student}/generate', [TranscriptController::class, 'generate'])->name('transcripts.generate');
-        Route::get('/transcripts/{student}/preview', [TranscriptController::class, 'preview'])->name('transcripts.preview');
-        Route::post('/transcripts/bulk-generate', [TranscriptController::class, 'bulkGenerate'])->name('transcripts.bulk-generate');
-    });
-
     // Reports
     Route::middleware('permission:view-reports')->group(function () {
         Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
-        Route::get('/reports/grade-distribution', [ReportController::class, 'gradeDistribution'])->name('reports.grade-distribution');
-        Route::get('/reports/subject-performance', [ReportController::class, 'subjectPerformance'])->name('reports.subject-performance');
-        Route::get('/reports/student-performance', [ReportController::class, 'studentPerformance'])->name('reports.student-performance');
-        Route::get('/reports/programme-statistics', [ReportController::class, 'programmeStatistics'])->name('reports.programme-statistics');
-        Route::get('/reports/aggregate-distribution', [ReportController::class, 'aggregateDistribution'])->name('reports.aggregate-distribution');
-        Route::get('/reports/semester-comparison', [ReportController::class, 'semesterComparison'])->name('reports.semester-comparison');
-        Route::get('/reports/export-excel', [ReportController::class, 'exportToExcel'])->name('reports.export-excel');
     });
 
     // Student Dashboard Routes
@@ -450,17 +332,8 @@ Route::middleware(['auth'])->group(function () {
         // method Closure::__set_state()" as soon as this route file was cached.
         Route::group(['middleware' => 'student', 'prefix' => 'student', 'as' => 'student.'], function () {
             Route::get('/dashboard', [\App\Http\Controllers\Auth\StudentAuthController::class, 'dashboard'])->name('dashboard');
-            Route::get('/transcript', [\App\Http\Controllers\Auth\StudentAuthController::class, 'transcript'])->name('transcript');
             Route::get('/report-card', [\App\Http\Controllers\ReportCardController::class, 'studentShow'])->name('report-card');
 
-            // Subject Registration Routes
-            Route::get('/registration', [RegistrationController::class, 'index'])->name('registration.index');
-            Route::get('/registration/create', [RegistrationController::class, 'create'])->name('registration.create');
-            Route::post('/registration', [RegistrationController::class, 'store'])->name('registration.store');
-            Route::get('/registration/print', [RegistrationController::class, 'print'])->name('registration.print');
-            Route::delete('/registration/{registration}', [RegistrationController::class, 'destroy'])->name('registration.destroy');
-
-            Route::get('/continuous-assessment', [\App\Http\Controllers\Auth\StudentAuthController::class, 'continuousAssessment'])->name('continuous-assessment');
 
             Route::get('/fees', [\App\Http\Controllers\StudentFeeController::class, 'index'])->name('fees.index');
 
@@ -538,6 +411,10 @@ Route::middleware(['auth'])->group(function () {
             // System Settings
             Route::get('/settings/system', [SettingController::class, 'system'])->name('settings.system');
             Route::put('/settings/system', [SettingController::class, 'updateSystem'])->name('settings.system.update');
+
+            // School & report settings (levels offered, score split, admission numbers)
+            Route::get('/settings/school', [SettingController::class, 'school'])->name('settings.school');
+            Route::put('/settings/school', [SettingController::class, 'updateSchool'])->name('settings.school.update');
 
             // Institution Settings
             Route::get('/settings/institution', [SettingController::class, 'institution'])->name('settings.institution');

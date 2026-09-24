@@ -3,217 +3,129 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClassGroup;
-use App\Models\Programme;
+use App\Models\Semester;
 use App\Models\Student;
+use App\Models\TermReport;
 use App\Support\FormLabel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
 
+/**
+ * End-of-year promotion, one class at a time: every pupil in the class moves to a class at
+ * the next level (e.g. Basic 4A -> Basic 5A), except pupils marked to repeat. Pupils in the
+ * school's final class (normally JHS 3) are marked as completed instead.
+ *
+ * The promote/repeat decision is pre-filled from the "Promoted to" entry the class teacher
+ * made on the third-term report, where there is one.
+ *
+ * Only students.level / class_group_id / status change - scores and fee records are keyed by
+ * term, so pupils' history is untouched.
+ */
 class PromotionController extends Controller
 {
-    /**
-     * Show the programme + level picker. When a programme is selected, list its
-     * levels that currently have active students, with counts, as promotion candidates.
-     */
-    public function index(Request $request)
+    public function index()
     {
-        $programmes = Programme::orderBy('name')->get();
+        $classGroups = ClassGroup::with('classTeacher')
+            ->withCount(['students' => fn ($q) => $q->where('status', 'active')])
+            ->orderBy('level')->orderBy('name')->get();
 
-        $programme = $request->filled('programme_id')
-            ? Programme::find($request->programme_id)
-            : null;
+        $classGroups->each(function (ClassGroup $class) {
+            $class->next_level = FormLabel::next($class->level);
+            $class->suggested_target = $class->next_level ? $this->matchClassGroup($class) : null;
+        });
 
-        $levels = [];
-
-        if ($programme) {
-            $terminalLevel = $programme->terminalLevel();
-
-            for ($level = 100; $level <= $terminalLevel; $level += 100) {
-                $count = Student::where('programme_id', $programme->id)
-                    ->where('level', $level)
-                    ->where('status', 'active')
-                    ->count();
-
-                if ($count > 0) {
-                    $levels[] = [
-                        'level' => $level,
-                        'count' => $count,
-                        'is_terminal' => $level === $terminalLevel,
-                    ];
-                }
-            }
-        }
-
-        return view('promotions.index', compact('programmes', 'programme', 'levels'));
+        return view('promotions.index', compact('classGroups'));
     }
 
-    /**
-     * Preview exactly which students will be affected before committing anything, including
-     * which class each one will land in at the new level.
-     */
     public function preview(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'programme_id' => 'required|exists:programmes,id',
-            'level' => 'required|integer|min:100',
-        ]);
+        $request->validate(['class_group_id' => 'required|exists:class_groups,id']);
 
-        if ($validator->fails()) {
-            return redirect()->route('promotions.index')
-                ->withErrors($validator)
-                ->withInput();
-        }
+        $classGroup = ClassGroup::findOrFail($request->class_group_id);
+        $nextLevel = FormLabel::next($classGroup->level);
+        $isFinal = $nextLevel === null;
 
-        $programme = Programme::findOrFail($request->programme_id);
-        $level = (int) $request->level;
-        $isTerminal = $level >= $programme->terminalLevel();
-        $targetLevel = $isTerminal ? null : $level + 100;
-
-        $students = Student::with('classGroup')
-            ->where('programme_id', $programme->id)
-            ->where('level', $level)
+        $students = Student::where('class_group_id', $classGroup->id)
             ->where('status', 'active')
             ->orderBy('full_name')
             ->get();
 
         if ($students->isEmpty()) {
-            return redirect()->route('promotions.index')
-                ->with('error', 'No active students found at that level for this programme.');
+            return redirect()->route('promotions.index')->with('error', "There are no pupils in {$classGroup->name}.");
         }
 
-        if (!$isTerminal) {
-            $targetClassGroups = ClassGroup::where('programme_id', $programme->id)
-                ->where('level', $targetLevel)
-                ->get();
+        // Decisions from the last term of the current academic year's reports, if entered.
+        $finalTerm = Semester::whereHas('academicYear', fn ($q) => $q->where('is_current', true))
+            ->orderByDesc('semester_number')->first();
+        $decisions = $finalTerm
+            ? TermReport::where('semester_id', $finalTerm->id)->whereIn('student_id', $students->pluck('id'))->pluck('promoted_to', 'student_id')
+            : collect();
 
-            $students->each(function (Student $student) use ($level, $targetLevel, $targetClassGroups) {
-                $student->predicted_class_group = $student->classGroup
-                    ? $this->matchClassGroup($student->classGroup->name, $level, $targetLevel, $targetClassGroups)
-                    : null;
-            });
-        }
+        $targetClasses = $isFinal ? collect() : ClassGroup::where('level', $nextLevel)->orderBy('name')->get();
+        $suggested = $isFinal ? null : $this->matchClassGroup($classGroup);
 
-        $defaultGraduationYear = now()->year;
-
-        return view('promotions.preview', compact('programme', 'level', 'targetLevel', 'isTerminal', 'students', 'defaultGraduationYear'));
+        return view('promotions.preview', compact('classGroup', 'students', 'nextLevel', 'isFinal', 'targetClasses', 'suggested', 'decisions', 'finalTerm'));
     }
 
-    /**
-     * Commit the promotion: bump level (or mark graduated at the terminal level).
-     *
-     * When promoting, each student is carried into the class at the new level whose name
-     * matches their current class with the form digit swapped (e.g. "1S12" -> "2S12", "Science
-     * 1A" -> "Science 2A") if such a class exists; otherwise they're left unassigned for manual
-     * reassignment via Classes > Assign Students.
-     *
-     * Only ever touches students.level/class_group_id/status/graduation_year - results,
-     * registrations, continuous assessment and arrears are keyed by academic_year_id (not level
-     * or class group) and are never read or written here, so continuing students' historical
-     * records are left untouched.
-     */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'programme_id' => 'required|exists:programmes,id',
-            'level' => 'required|integer|min:100',
+        $request->validate([
+            'class_group_id' => 'required|exists:class_groups,id',
+            'target_class_group_id' => 'nullable|exists:class_groups,id',
+            'student_ids' => 'nullable|array',
+            'student_ids.*' => 'exists:students,id',
             'graduation_year' => 'nullable|integer|min:2000|max:2100',
         ]);
 
-        if ($validator->fails()) {
-            return redirect()->route('promotions.index')
-                ->withErrors($validator)
-                ->withInput();
+        $classGroup = ClassGroup::findOrFail($request->class_group_id);
+        $nextLevel = FormLabel::next($classGroup->level);
+        $moving = Student::where('class_group_id', $classGroup->id)
+            ->where('status', 'active')
+            ->whereIn('id', (array) $request->input('student_ids', []))
+            ->pluck('id');
+
+        if ($moving->isEmpty()) {
+            return redirect()->route('promotions.index')->with('error', 'No pupils were ticked, so nobody was moved.');
         }
 
-        $programme = Programme::findOrFail($request->programme_id);
-        $level = (int) $request->level;
-        $isTerminal = $level >= $programme->terminalLevel();
-        $graduationYear = (int) ($request->input('graduation_year') ?: now()->year);
+        if ($nextLevel === null) {
+            $year = (int) ($request->input('graduation_year') ?: now()->year);
+            Student::whereIn('id', $moving)->update(['class_group_id' => null, 'status' => 'graduated', 'graduation_year' => $year]);
 
-        $count = 0;
-        $carried = 0;
+            return redirect()->route('promotions.index')
+                ->with('success', "{$moving->count()} pupil(s) marked as having completed {$classGroup->name} ({$year}).");
+        }
 
-        DB::transaction(function () use ($programme, $level, $isTerminal, $graduationYear, &$count, &$carried) {
-            $scope = Student::where('programme_id', $programme->id)
-                ->where('level', $level)
-                ->where('status', 'active');
+        $target = $request->filled('target_class_group_id') ? ClassGroup::find($request->target_class_group_id) : null;
 
-            $students = $scope->get();
-            $count = $students->count();
+        if ($target && (int) $target->level !== $nextLevel) {
+            return back()->with('error', 'The target class must be a ' . FormLabel::label($nextLevel) . ' class.');
+        }
 
-            if ($count === 0) {
-                return;
-            }
-
-            if ($isTerminal) {
-                $scope->update(['class_group_id' => null, 'status' => 'graduated', 'graduation_year' => $graduationYear]);
-
-                return;
-            }
-
-            $targetLevel = $level + 100;
-            $targetClassGroups = ClassGroup::where('programme_id', $programme->id)
-                ->where('level', $targetLevel)
-                ->get();
-
-            foreach ($students->groupBy('class_group_id') as $classGroupId => $studentsInClass) {
-                $currentName = $classGroupId ? optional(ClassGroup::find($classGroupId))->name : null;
-
-                $matched = $currentName
-                    ? $this->matchClassGroup($currentName, $level, $targetLevel, $targetClassGroups)
-                    : null;
-
-                if ($matched) {
-                    $carried += $studentsInClass->count();
-                }
-
-                Student::whereIn('id', $studentsInClass->pluck('id'))
-                    ->update(['level' => $targetLevel, 'class_group_id' => $matched?->id]);
-            }
+        DB::transaction(function () use ($moving, $nextLevel, $target) {
+            Student::whereIn('id', $moving)->update(['level' => $nextLevel, 'class_group_id' => $target?->id]);
         });
 
-        if ($count === 0) {
-            return redirect()->route('promotions.index')
-                ->with('error', 'No active students found at that level for this programme — they may have already been promoted.');
-        }
+        $repeating = Student::where('class_group_id', $classGroup->id)->where('status', 'active')->count();
 
-        if ($isTerminal) {
-            $message = "{$count} student(s) marked as graduated from " . FormLabel::label($level) . '.';
-        } else {
-            $unmatched = $count - $carried;
-            $message = "{$count} student(s) promoted from " . FormLabel::label($level) . ' to ' . FormLabel::label($level + 100) . '. '
-                . ($carried > 0 ? "{$carried} carried into their matching class automatically. " : '')
-                . ($unmatched > 0 ? "{$unmatched} have no matching class at " . FormLabel::label($level + 100) . ' yet — assign them via Classes > Assign Students.' : '');
-        }
-
-        return redirect()->route('promotions.index')->with('success', trim($message));
+        return redirect()->route('promotions.index')->with('success',
+            "{$moving->count()} pupil(s) promoted from {$classGroup->name} to " . ($target?->name ?? FormLabel::label($nextLevel) . ' (not yet placed in a class)') . '.'
+            . ($repeating ? " {$repeating} pupil(s) remain in {$classGroup->name}." : ''));
     }
 
     /**
-     * Find the class at the target level whose name matches the given current-level class name
-     * with the form digit swapped - e.g. "1S12" -> "2S12", "Science 1A" -> "Science 2A". The
-     * digit must appear as a standalone token (not part of a larger number) so names like
-     * "Room 100" aren't mangled. Returns null if no such class exists yet.
+     * The class at the next level with the same stream name, e.g. "Basic 4A" -> "Basic 5A",
+     * "JHS 1 Gold" -> "JHS 2 Gold". Falls back to the only class at that level, if there is one.
      */
-    private function matchClassGroup(string $currentName, int $currentLevel, int $targetLevel, \Illuminate\Support\Collection $targetClassGroups): ?ClassGroup
+    private function matchClassGroup(ClassGroup $classGroup): ?ClassGroup
     {
-        $currentDigit = intdiv($currentLevel, 100);
-        $targetDigit = intdiv($targetLevel, 100);
+        $nextLevel = FormLabel::next($classGroup->level);
+        $candidates = ClassGroup::where('level', $nextLevel)->get();
 
-        $expectedName = preg_replace(
-            '/(?<!\d)' . preg_quote((string) $currentDigit, '/') . '(?!\d)/',
-            (string) $targetDigit,
-            $currentName,
-            1
-        );
+        $currentLabel = FormLabel::label($classGroup->level);
+        $expected = str_ireplace($currentLabel, FormLabel::label($nextLevel), $classGroup->name);
 
-        if ($expectedName === $currentName) {
-            return null;
-        }
-
-        return $targetClassGroups->first(
-            fn (ClassGroup $candidate) => strcasecmp($candidate->name, $expectedName) === 0
-        );
+        return $candidates->first(fn ($c) => strcasecmp($c->name, $expected) === 0)
+            ?? ($candidates->count() === 1 ? $candidates->first() : null);
     }
 }

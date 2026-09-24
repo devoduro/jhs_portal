@@ -36,9 +36,9 @@
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Programme</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Form</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Students</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class Teacher</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Level</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pupils</th>
                                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
@@ -46,7 +46,7 @@
                                     @foreach($classGroups as $classGroup)
                                         <tr>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $classGroup->name }}</td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $classGroup->programme->name ?? 'N/A' }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $classGroup->classTeacher->name ?? '—' }}</td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ \App\Support\FormLabel::label($classGroup->level) }}</td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $classGroup->students_count }}</td>
                                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -55,7 +55,7 @@
                                                         <i class="fas fa-print"></i>
                                                     </a>
                                                     @canany(['manage-results', 'view-results'])
-                                                        <a href="{{ route('report-cards.bulk-print', ['class_group_id' => $classGroup->id]) }}" target="_blank" class="text-gray-600 hover:text-gray-900" title="Print Report Cards">
+                                                        <a href="{{ route('report-cards.bulk-print', ['class_group_id' => $classGroup->id]) }}" target="_blank" class="text-gray-600 hover:text-gray-900" title="Print terminal reports">
                                                             <i class="fas fa-id-card"></i>
                                                         </a>
                                                     @endcanany
@@ -70,7 +70,7 @@
                                                             </span>
                                                         @endif
                                                     @endcan
-                                                    <a href="{{ route('class-groups.assign-students', $classGroup) }}" class="text-primary-600 hover:text-primary-900" title="Assign Students">
+                                                    <a href="{{ route('class-groups.assign-students', $classGroup) }}" class="text-primary-600 hover:text-primary-900" title="Place pupils in this class">
                                                         <i class="fas fa-user-plus"></i>
                                                     </a>
                                                     <a href="{{ route('class-groups.edit', $classGroup) }}" class="text-indigo-600 hover:text-indigo-900">

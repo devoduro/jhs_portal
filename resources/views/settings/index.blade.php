@@ -20,7 +20,7 @@
                             </div>
                             <h3 class="text-lg font-medium text-gray-900">Academic Years</h3>
                         </div>
-                        <p class="text-gray-600 mb-4">Manage academic years and their associated semesters.</p>
+                        <p class="text-gray-600 mb-4">Manage academic years and their three terms.</p>
                         <a href="{{ route('settings.academic-years') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
                             Manage
                         </a>
@@ -36,7 +36,7 @@
                             </div>
                             <h3 class="text-lg font-medium text-gray-900">Grade Schemes</h3>
                         </div>
-                        <p class="text-gray-600 mb-4">Configure grading scales, grade points, and remarks.</p>
+                        <p class="text-gray-600 mb-4">Grading scales for Primary (NaCCA) and JHS (BECE 1-9) with remarks.</p>
                         <a href="{{ route('settings.grade-schemes') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
                             Manage
                         </a>
@@ -44,16 +44,16 @@
                 </div>
                 
                 <!-- CA Score Settings -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg ring-2 ring-primary-200">
                     <div class="p-6 border-b border-gray-200">
                         <div class="flex items-center mb-4">
-                            <div class="rounded-full p-3 bg-teal-100 mr-4">
-                                <i class="fas fa-tasks text-teal-600 text-xl"></i>
+                            <div class="rounded-full p-3 bg-green-100 mr-4">
+                                <i class="fas fa-school text-green-600 text-xl"></i>
                             </div>
-                            <h3 class="text-lg font-medium text-gray-900">CA Score Settings</h3>
+                            <h3 class="text-lg font-medium text-gray-900">School & Report Settings</h3>
                         </div>
-                        <p class="text-gray-600 mb-4">Set Continuous Assessment max marks (Attendance, Project, Assignment, Mid-Semester) per form.</p>
-                        <a href="{{ route('ca-score-settings.index') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700 active:bg-primary-800 focus:outline-none focus:border-primary-800 focus:ring ring-primary-300 disabled:opacity-25 transition ease-in-out duration-150">
+                        <p class="text-gray-600 mb-4">Classes offered (KG, Primary, JHS), class/exam score split, admission numbers and what shows on terminal reports.</p>
+                        <a href="{{ route('settings.school') }}" class="inline-flex items-center px-4 py-2 bg-primary-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-primary-700">
                             Manage
                         </a>
                     </div>

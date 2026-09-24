@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AcademicYear;
 use App\Services\FeeLedgerService;
 use Illuminate\Support\Facades\Auth;
 
@@ -18,20 +17,15 @@ class StudentFeeController extends Controller
         $schedule = FeeLedgerService::scheduleFor($student);
         $ledger = FeeLedgerService::ledgerFor($student);
 
-        $currentAcademicYear = AcademicYear::where('is_current', true)->first();
-        $currentYearBalance = $currentAcademicYear ? $student->feeBalance($currentAcademicYear) : 0.0;
-
-        // Sourced from the ledger itself (not recomputed independently) so this figure can
-        // never drift from the transaction math shown below it - it's the running balance
-        // as of the most recent transaction, i.e. arrears + every unpaid year's tuition combined.
+        $term = \App\Models\Semester::with('academicYear')->where('is_current', true)->first();
         $balanceDue = $ledger[0]['balance'] ?? 0.0;
-
-        // The closing balance of the previous year(s), derived from the same two figures above
-        // rather than a separately-tracked arrears total, so it can never drift from them.
-        $totalArrears = $balanceDue - $currentYearBalance;
+        $termBill = $term ? $student->billedAmount(null, $term) : 0.0;
+        $termPaid = $term ? $student->paidAmount(null, $term) : 0.0;
+        $totalArrears = $balanceDue - ($termBill - $termPaid);
+        $currentYearBalance = $termBill - $termPaid;
 
         return view('student.fees.index', compact(
-            'student', 'schedule', 'ledger', 'totalArrears', 'currentYearBalance', 'balanceDue'
+            'student', 'schedule', 'ledger', 'totalArrears', 'currentYearBalance', 'balanceDue', 'term'
         ));
     }
 }

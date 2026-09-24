@@ -1,77 +1,50 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Add Class') }}
-            </h2>
-            <x-button href="{{ route('class-groups.index') }}" variant="secondary" icon="fas fa-arrow-left">
-                {{ __('Back to Classes') }}
-            </x-button>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ isset($classGroup) ? 'Edit Class' : 'Add Class' }}</h2>
+            <x-button href="{{ route('class-groups.index') }}" variant="secondary" icon="fas fa-arrow-left">Classes</x-button>
         </div>
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6 bg-white border-b border-gray-200">
-                    <form method="POST" action="{{ route('class-groups.store') }}" class="space-y-6">
-                        @csrf
+    <div class="py-8">
+        <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
+            <form method="POST" action="{{ isset($classGroup) ? route('class-groups.update', $classGroup) : route('class-groups.store') }}" class="bg-white shadow-sm rounded-lg p-6 space-y-6">
+                @csrf
+                @isset($classGroup) @method('PUT') @endisset
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label for="programme_id" class="block text-sm font-medium text-gray-700">Programme <span class="text-red-500">*</span></label>
-                                <select id="programme_id" name="programme_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md" required>
-                                    <option value="">Select Programme</option>
-                                    @foreach($programmes as $programme)
-                                        <option value="{{ $programme->id }}" {{ old('programme_id') == $programme->id ? 'selected' : '' }}>
-                                            {{ $programme->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('programme_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="level" class="block text-sm font-medium text-gray-700">Class level <span class="text-red-500">*</span></label>
+                        <select id="level" name="level" class="mt-1 block w-full rounded-lg border-gray-300 text-sm" required>
+                            <option value="">Select...</option>
+                            @foreach(\App\Support\FormLabel::options() as $levelOption => $levelLabel)
+                                <option value="{{ $levelOption }}" @selected(old('level', $classGroup->level ?? '') == $levelOption)>{{ $levelLabel }}</option>
+                            @endforeach
+                        </select>
+                        @error('level')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    </div>
 
-                            <div>
-                                <label for="level" class="block text-sm font-medium text-gray-700">Form <span class="text-red-500">*</span></label>
-                                <select id="level" name="level" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md" required>
-                                    <option value="">Select Form</option>
-                                    @foreach(\App\Support\FormLabel::OPTIONS as $levelOption => $levelLabel)
-                                        <option value="{{ $levelOption }}" {{ old('level') == $levelOption ? 'selected' : '' }}>
-                                            {{ $levelLabel }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('level')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                    <x-input id="name" name="name" label="Class name" :value="old('name', $classGroup->name ?? '')" required
+                             placeholder="e.g. Basic 4A, JHS 2 Gold" helper="Use the level plus a stream letter or name if you have more than one class per level." />
 
-                            <div class="md:col-span-2">
-                                <x-input
-                                    id="name"
-                                    name="name"
-                                    type="text"
-                                    label="Class Name"
-                                    :value="old('name')"
-                                    required
-                                    placeholder="e.g. 100A"
-                                />
-                            </div>
-                        </div>
-
-                        <div class="mt-6 flex justify-end space-x-3">
-                            <x-button type="button" variant="secondary" onclick="window.history.back()">
-                                {{ __('Cancel') }}
-                            </x-button>
-                            <x-button type="submit">
-                                {{ __('Create Class') }}
-                            </x-button>
-                        </div>
-                    </form>
+                    <div class="md:col-span-2">
+                        <label for="class_teacher_id" class="block text-sm font-medium text-gray-700">Class teacher</label>
+                        <select id="class_teacher_id" name="class_teacher_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm">
+                            <option value="">Not assigned</option>
+                            @foreach($teachers as $teacher)
+                                <option value="{{ $teacher->id }}" @selected(old('class_teacher_id', $classGroup->class_teacher_id ?? '') == $teacher->id)>{{ $teacher->name }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-sm text-gray-500">The class teacher can enter scores for every subject in this class, and attendance and remarks for the terminal report.</p>
+                        @error('class_teacher_id')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    </div>
                 </div>
-            </div>
+
+                <div class="flex justify-end gap-3">
+                    <x-button href="{{ route('class-groups.index') }}" variant="secondary">Cancel</x-button>
+                    <x-button type="submit" icon="fas fa-check">{{ isset($classGroup) ? 'Save Changes' : 'Create Class' }}</x-button>
+                </div>
+            </form>
         </div>
     </div>
 </x-app-layout>

@@ -41,38 +41,41 @@ class StudentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Student::with('programme');
-        
-        // Search functionality
-        if ($request->has('search') && $request->search) {
+        $query = Student::with('classGroup');
+
+        if ($request->filled('search')) {
             $searchTerm = $request->search;
-            $query->where(function($q) use ($searchTerm) {
+            $query->where(function ($q) use ($searchTerm) {
                 $q->where('full_name', 'like', "%{$searchTerm}%")
-                  ->orWhere('index_number', 'like', "%{$searchTerm}%")
-                  ->orWhere('email', 'like', "%{$searchTerm}%")
-                  ->orWhere('phone', 'like', "%{$searchTerm}%");
+                    ->orWhere('index_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('emergency_contact_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('emergency_contact_phone', 'like', "%{$searchTerm}%")
+                    ->orWhere('phone', 'like', "%{$searchTerm}%");
             });
         }
-        
-        // Filter by programme
-        if ($request->has('programme_id') && $request->programme_id) {
-            $query->where('programme_id', $request->programme_id);
+
+        if ($request->filled('class_group_id')) {
+            $query->where('class_group_id', $request->class_group_id);
         }
-        
-        // Filter by gender
-        if ($request->has('gender') && $request->gender) {
+
+        if ($request->boolean('unplaced')) {
+            $query->whereNull('class_group_id');
+        }
+
+        if ($request->filled('gender')) {
             $query->where('gender', $request->gender);
         }
 
-        // Filter by level
-        if ($request->has('level') && $request->level) {
+        if ($request->filled('level')) {
             $query->where('level', $request->level);
         }
 
-        $students = $query->paginate(10)->withQueryString();
-        $programmes = Programme::all();
-        
-        return view('students.index', compact('students', 'programmes'));
+        $query->where('status', $request->input('status', 'active'));
+
+        $students = $query->orderBy('level')->orderBy('full_name')->paginate(25)->withQueryString();
+        $classGroups = $this->classGroupOptions();
+
+        return view('students.index', compact('students', 'classGroups'));
     }
 
     /**
@@ -80,21 +83,81 @@ class StudentController extends Controller
      */
     public function create()
     {
-        $programmes = Programme::all();
         $classGroups = $this->classGroupOptions();
-        return view('students.create', compact('programmes', 'classGroups'));
+        $suggestedAdmissionNumber = $this->nextAdmissionNumber();
+
+        return view('students.create', compact('classGroups', 'suggestedAdmissionNumber'));
+    }
+
+    protected function classGroupOptions()
+    {
+        return ClassGroup::orderBy('level')->orderBy('name')->get();
     }
 
     /**
-     * Class groups labelled with programme + level for the manual assignment dropdown.
+     * Next admission number in the school's pattern, e.g. "SCH/2026/0042": institution code,
+     * year of admission and a running number for that year.
      */
-    protected function classGroupOptions()
+    protected function nextAdmissionNumber(): string
     {
-        return ClassGroup::with('programme')
-            ->orderBy('programme_id')
-            ->orderBy('level')
-            ->orderBy('name')
-            ->get();
+        $code = \App\Models\Setting::get('institution_code', 'SCH') ?: 'SCH';
+        $prefix = strtoupper($code) . '/' . now()->year . '/';
+
+        $last = Student::where('index_number', 'like', $prefix . '%')
+            ->pluck('index_number')
+            ->map(fn ($n) => (int) substr($n, strlen($prefix)))
+            ->max() ?? 0;
+
+        return $prefix . str_pad((string) ($last + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Validation shared by create and update. A pupil's class level comes from their class
+     * when one is chosen, so level is only required for a pupil not yet placed in a class.
+     */
+    protected function pupilRules(?int $ignoreId = null): array
+    {
+        return [
+            'index_number' => 'nullable|string|max:50|unique:students,index_number' . ($ignoreId ? ',' . $ignoreId : ''),
+            'full_name' => 'required|string|max:255',
+            'date_of_birth' => 'nullable|date|before:today',
+            'gender' => 'required|in:Male,Female',
+            'class_group_id' => 'nullable|exists:class_groups,id',
+            'level' => 'required_without:class_group_id|nullable|integer|' . \App\Support\FormLabel::rule(),
+            'status' => 'nullable|in:active,graduated,withdrawn',
+            'profile_photo' => 'nullable|image|max:2048',
+            'emergency_contact_name' => 'nullable|string|max:255',
+            'emergency_contact_relationship' => 'nullable|string|max:100',
+            'emergency_contact_phone' => 'nullable|string|max:20',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string',
+            'hometown' => 'nullable|string|max:255',
+            'gps_address' => 'nullable|string|max:50',
+        ];
+    }
+
+    protected function pupilData(Request $request): array
+    {
+        $data = $request->only([
+            'index_number', 'full_name', 'date_of_birth', 'gender', 'class_group_id', 'level', 'status',
+            'emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone',
+            'email', 'phone', 'address', 'hometown', 'gps_address',
+        ]);
+
+        foreach (['level', 'date_of_birth', 'index_number', 'status'] as $field) {
+            if (($data[$field] ?? '') === '') {
+                unset($data[$field]);
+            }
+        }
+
+        if (($data['class_group_id'] ?? '') === '') {
+            $data['class_group_id'] = null;
+        } else {
+            $data['level'] = ClassGroup::find($data['class_group_id'])->level;
+        }
+
+        return $data;
     }
 
     /**
@@ -102,22 +165,7 @@ class StudentController extends Controller
      */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'index_number' => 'required|string|unique:students,index_number',
-            'full_name' => 'required|string|max:255',
-            'date_of_birth' => 'required|date',
-            'gender' => 'required|in:Male,Female,Other',
-            'programme_id' => 'required|exists:programmes,id',
-            'level' => 'nullable|integer|min:100|max:800',
-            'class_group_id' => 'nullable|exists:class_groups,id',
-            'boarding_status' => 'nullable|in:day,boarder',
-            'profile_photo' => 'nullable|image|max:2048',
-            'emergency_contact_name' => 'nullable|string|max:255',
-            'emergency_contact_phone' => 'nullable|string|max:20',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-        ]);
+        $validator = Validator::make($request->all(), $this->pupilRules());
 
         if ($validator->fails()) {
             return redirect()->route('students.create')
@@ -125,30 +173,22 @@ class StudentController extends Controller
                 ->withInput();
         }
 
-        $data = $request->all();
+        $data = $this->pupilData($request);
+        $data['index_number'] = $data['index_number'] ?? $this->nextAdmissionNumber();
+        $data['status'] = 'active';
 
-        if (($data['level'] ?? '') === '') {
-            $data['level'] = null;
-        }
-
-        if (($data['class_group_id'] ?? '') === '') {
-            $data['class_group_id'] = null;
-        }
-
-        if (($data['boarding_status'] ?? '') === '') {
-            $data['boarding_status'] = null;
-        }
-
-        // Handle profile photo upload
         if ($request->hasFile('profile_photo')) {
-            $path = $request->file('profile_photo')->store('profile_photos', 'public');
-            $data['profile_photo'] = $path;
+            $data['profile_photo'] = $request->file('profile_photo')->store('profile_photos', 'public');
         }
 
-        Student::create($data);
+        $student = Student::create($data);
+        $message = "{$student->full_name} admitted with admission number {$student->index_number}.";
 
-        return redirect()->route('students.index')
-            ->with('success', 'Student created successfully.');
+        if ($request->input('after') === 'another') {
+            return redirect()->route('students.create')->with('success', $message);
+        }
+
+        return redirect()->route('students.show', $student)->with('success', $message);
     }
 
     /**
@@ -156,7 +196,7 @@ class StudentController extends Controller
      */
     public function show(string $id)
     {
-        $student = Student::with(['programme', 'classGroup', 'results' => function($query) {
+        $student = Student::with(['classGroup', 'results' => function($query) {
             $query->with(['subject', 'semester', 'academicYear'])
                   ->orderBy('academic_year_id')
                   ->orderBy('semester_id');
@@ -193,12 +233,10 @@ class StudentController extends Controller
             }
         }
 
-        $aggregate = $student->calculateAggregate();
-        $gradeStanding = $student->getGradeStanding();
+        $semesters = Semester::with('academicYear')->orderBy('academic_year_id', 'desc')->orderBy('semester_number', 'desc')->get();
+        $balance = $student->outstandingBalance();
 
-        $semesters = Semester::orderBy('academic_year_id', 'desc')->orderBy('semester_number', 'desc')->get();
-
-        return view('students.show', compact('student', 'groupedResults', 'aggregate', 'gradeStanding', 'semesters'));
+        return view('students.show', compact('student', 'groupedResults', 'semesters', 'balance'));
     }
 
     /**
@@ -215,12 +253,12 @@ class StudentController extends Controller
 
         if ($validator->fails()) {
             return redirect()->route('students.show', $student)
-                ->with('error', 'Select a semester to send grades for.');
+                ->with('error', 'Select a term to send the report for.');
         }
 
         if (!$student->emergency_contact_phone) {
             return redirect()->route('students.show', $student)
-                ->with('error', 'This student has no emergency contact phone number on file.');
+                ->with('error', 'This pupil has no parent/guardian phone number on file.');
         }
 
         $semester = Semester::findOrFail($request->semester_id);
@@ -228,11 +266,11 @@ class StudentController extends Controller
 
         if (!$smsLogId) {
             return redirect()->route('students.show', $student)
-                ->with('error', 'No results found for that semester, or the message could not be sent.');
+                ->with('error', 'No scores found for that term, or the message could not be sent.');
         }
 
         return redirect()->route('students.show', $student)
-            ->with('success', "Grades for {$semester->name} sent to {$student->full_name}'s emergency contact.");
+            ->with('success', "{$semester->name} report link sent to {$student->full_name}'s parent/guardian.");
     }
 
     /**
@@ -240,10 +278,10 @@ class StudentController extends Controller
      */
     public function edit(string $id)
     {
-        $student = Student::with('programme')->findOrFail($id);
-        $programmes = Programme::all();
+        $student = Student::findOrFail($id);
         $classGroups = $this->classGroupOptions();
-        return view('students.edit', compact('student', 'programmes', 'classGroups'));
+
+        return view('students.edit', compact('student', 'classGroups'));
     }
 
     /**
@@ -252,23 +290,8 @@ class StudentController extends Controller
     public function update(Request $request, string $id)
     {
         $student = Student::findOrFail($id);
-        
-        $validator = Validator::make($request->all(), [
-            'index_number' => 'required|string|unique:students,index_number,' . $id,
-            'full_name' => 'required|string|max:255',
-            'date_of_birth' => 'required|date',
-            'gender' => 'required|in:Male,Female,Other',
-            'programme_id' => 'required|exists:programmes,id',
-            'level' => 'nullable|integer|min:100|max:800',
-            'class_group_id' => 'nullable|exists:class_groups,id',
-            'boarding_status' => 'nullable|in:day,boarder',
-            'profile_photo' => 'nullable|image|max:2048',
-            'emergency_contact_name' => 'nullable|string|max:255',
-            'emergency_contact_phone' => 'nullable|string|max:20',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-        ]);
+
+        $validator = Validator::make($request->all(), $this->pupilRules((int) $id));
 
         if ($validator->fails()) {
             return redirect()->route('students.edit', $id)
@@ -276,35 +299,20 @@ class StudentController extends Controller
                 ->withInput();
         }
 
-        $data = $request->except(['profile_photo']);
+        $data = $this->pupilData($request);
 
-        if (($data['level'] ?? '') === '') {
-            $data['level'] = null;
-        }
-
-        if (($data['class_group_id'] ?? '') === '') {
-            $data['class_group_id'] = null;
-        }
-
-        if (($data['boarding_status'] ?? '') === '') {
-            $data['boarding_status'] = null;
-        }
-
-        // Handle profile photo upload
         if ($request->hasFile('profile_photo')) {
-            // Delete old photo if exists
             if ($student->profile_photo) {
                 Storage::disk('public')->delete($student->profile_photo);
             }
 
-            $path = $request->file('profile_photo')->store('profile_photos', 'public');
-            $data['profile_photo'] = $path;
+            $data['profile_photo'] = $request->file('profile_photo')->store('profile_photos', 'public');
         }
 
         $student->update($data);
 
-        return redirect()->route('students.index')
-            ->with('success', 'Student updated successfully.');
+        return redirect()->route('students.show', $student)
+            ->with('success', 'Pupil details updated.');
     }
 
     /**
@@ -354,10 +362,19 @@ class StudentController extends Controller
         }
 
         try {
-            Excel::import(new StudentsImport, $request->file('excel_file'));
+            $import = new StudentsImport();
+            Excel::import($import, $request->file('excel_file'));
 
-            return redirect()->route('students.index')
-                ->with('success', 'Students imported successfully.');
+            $message = "{$import->created} pupil(s) admitted, {$import->updated} updated.";
+
+            if ($import->errors) {
+                $message .= ' Skipped: ' . implode(' ', array_slice($import->errors, 0, 5))
+                    . (count($import->errors) > 5 ? ' (+' . (count($import->errors) - 5) . ' more)' : '');
+
+                return redirect()->route('students.index')->with('warning', $message);
+            }
+
+            return redirect()->route('students.index')->with('success', $message);
         } catch (\Exception $e) {
             return redirect()->route('students.import.form')
                 ->with('error', 'Error importing students: ' . $e->getMessage());
@@ -369,14 +386,7 @@ class StudentController extends Controller
      */
     public function downloadTemplate()
     {
-        $filePath = storage_path('app/templates/students_import_template.xlsx');
-        
-        if (!file_exists($filePath)) {
-            return redirect()->route('students.import.form')
-                ->with('error', 'Template file not found.');
-        }
-        
-        return response()->download($filePath, 'students_import_template.xlsx');
+        return Excel::download(new \App\Exports\StudentImportTemplateExport, 'pupils_import_template.xlsx');
     }
     
     /**
@@ -518,7 +528,7 @@ class StudentController extends Controller
     {
         // Find the student with necessary relationships
         $student = Student::with([
-            'programme',
+            'classGroup',
             'results' => function($query) {
                 $query->select('results.*')
                     ->join('academic_years', 'results.academic_year_id', '=', 'academic_years.id')

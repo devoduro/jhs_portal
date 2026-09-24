@@ -17,9 +17,12 @@ class Result extends Model
      */
     protected $fillable = [
         'student_id',
+        'class_group_id',
         'subject_id',
         'semester_id',
         'academic_year_id',
+        'class_score',
+        'exam_score',
         'grade',
         'grade_point',
         'score',
@@ -35,6 +38,8 @@ class Result extends Model
     protected $casts = [
         'grade_point' => 'decimal:2',
         'score' => 'decimal:2',
+        'class_score' => 'decimal:2',
+        'exam_score' => 'decimal:2',
         'is_repeated' => 'boolean',
     ];
     
@@ -46,6 +51,14 @@ class Result extends Model
         return $this->belongsTo(Student::class);
     }
     
+    /**
+     * The class the pupil was in when this result was recorded (positions are ranked within it).
+     */
+    public function classGroup(): BelongsTo
+    {
+        return $this->belongsTo(ClassGroup::class);
+    }
+
     /**
      * Get the subject that owns the result.
      */

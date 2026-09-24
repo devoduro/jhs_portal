@@ -2,10 +2,10 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Import Students') }}
+                {{ __('Import Pupils') }}
             </h2>
             <x-button href="{{ route('students.index') }}" variant="secondary" icon="fas fa-arrow-left">
-                {{ __('Back to Students') }}
+                {{ __('Back to Pupils') }}
             </x-button>
         </div>
     </x-slot>
@@ -23,11 +23,10 @@
                     <div class="mb-8 bg-blue-50 p-4 rounded-md">
                         <h3 class="text-lg font-medium text-blue-800 mb-2">Instructions</h3>
                         <ul class="list-disc pl-5 space-y-1 text-blue-700">
-                            <li>Download the template Excel file below</li>
-                            <li>Fill in the student details according to the template</li>
-                            <li>Required fields: index_number, full_name, date_of_birth, gender, programme_id</li>
-                            <li>Upload the completed Excel file</li>
-                            <li>Ensure programme_id values match existing programme IDs in the system</li>
+                            <li>Create the classes first (Classes page), then download the template below.</li>
+                            <li>One row per pupil. Required columns: <strong>full_name</strong>, <strong>gender</strong> (Male/Female), <strong>class</strong> (exactly as named on the Classes page, e.g. Basic 4A).</li>
+                            <li>Optional: admission_number (leave blank to number automatically), date_of_birth, parent_name, relationship, parent_phone, address.</li>
+                            <li>Re-uploading a row with an existing admission number updates that pupil instead of creating a duplicate.</li>
                         </ul>
                         <div class="mt-4">
                             <x-button href="{{ route('students.import.template') }}" variant="secondary" icon="fas fa-download">
@@ -52,7 +51,7 @@
                                 {{ __('Cancel') }}
                             </x-button>
                             <x-button type="submit">
-                                {{ __('Import Students') }}
+                                {{ __('Import Pupils') }}
                             </x-button>
                         </div>
                     </form>

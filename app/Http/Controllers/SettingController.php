@@ -172,6 +172,8 @@ class SettingController extends Controller
             'grades.*.grade' => 'required|string|max:5',
             'grades.*.min_score' => 'required|numeric|min:0|max:100',
             'grades.*.grade_value' => 'required|numeric|min:0|max:9',
+            'grades.*.remark' => 'nullable|string|max:100',
+            'section' => 'nullable|in:preschool,primary,jhs',
         ]);
 
         if ($validator->fails()) {
@@ -185,6 +187,7 @@ class SettingController extends Controller
             $gradeScheme = GradeScheme::create([
                 'name' => $request->name,
                 'description' => $request->description,
+                'section' => $request->input('section') ?: null,
                 'is_default' => $request->boolean('is_default', false),
             ]);
 
@@ -201,6 +204,7 @@ class SettingController extends Controller
                     'grade' => $grade['grade'],
                     'min_score' => $grade['min_score'],
                     'grade_value' => $grade['grade_value'],
+                    'remark' => $grade['remark'] ?? null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
@@ -283,6 +287,8 @@ class SettingController extends Controller
             'grades.*.grade' => 'required|string|max:5',
             'grades.*.min_score' => 'required|numeric|min:0|max:100',
             'grades.*.grade_value' => 'required|numeric|min:0|max:9',
+            'grades.*.remark' => 'nullable|string|max:100',
+            'section' => 'nullable|in:preschool,primary,jhs',
         ]);
 
         if ($validator->fails()) {
@@ -296,6 +302,7 @@ class SettingController extends Controller
             $gradeScheme->update([
                 'name' => $request->name,
                 'description' => $request->description,
+                'section' => $request->input('section') ?: null,
                 'is_default' => $request->boolean('is_default', false),
             ]);
 
@@ -315,6 +322,7 @@ class SettingController extends Controller
                     'grade' => $grade['grade'],
                     'min_score' => $grade['min_score'],
                     'grade_value' => $grade['grade_value'],
+                    'remark' => $grade['remark'] ?? null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
@@ -566,6 +574,56 @@ class SettingController extends Controller
     
 
     
+/**
+ * School & report settings: which class levels the school runs, the class-score /
+ * exam-score split on terminal reports, the admission-number prefix, and report options.
+ */
+public function school()
+{
+    $values = DB::table('settings')->pluck('value', 'key');
+
+    return view('settings.school', [
+        'offered' => \App\Support\FormLabel::offeredLevels(),
+        'values' => $values,
+    ]);
+}
+
+public function updateSchool(Request $request)
+{
+    $request->validate([
+        'levels' => 'required|array|min:1',
+        'levels.*' => 'integer|' . \App\Support\FormLabel::rule(),
+        'class_score_max' => 'required|numeric|min:0|max:100',
+        'exam_score_max' => 'required|numeric|min:0|max:100',
+        'institution_code' => 'required|string|max:10|alpha_num',
+        'head_title' => 'required|string|max:50',
+        'report_show_fees' => 'nullable|boolean',
+    ]);
+
+    if ((float) $request->class_score_max + (float) $request->exam_score_max != 100) {
+        return back()->withInput()->withErrors(['class_score_max' => 'Class score and exam score must add up to 100.']);
+    }
+
+    $levels = collect($request->levels)->map(fn ($l) => (int) $l)->sort()->implode(',');
+
+    $values = [
+        'levels_offered' => ['academic', $levels],
+        'class_score_max' => ['academic', (string) (float) $request->class_score_max],
+        'exam_score_max' => ['academic', (string) (float) $request->exam_score_max],
+        'report_show_fees' => ['academic', $request->boolean('report_show_fees') ? '1' : '0'],
+        'institution_code' => ['system', strtoupper($request->institution_code)],
+        'head_title' => ['institution', $request->head_title],
+    ];
+
+    foreach ($values as $key => [$category, $value]) {
+        DB::table('settings')->updateOrInsert(['key' => $key], ['category' => $category, 'value' => $value, 'updated_at' => now()]);
+    }
+
+    \App\Support\FormLabel::forgetOffered();
+
+    return redirect()->route('settings.school')->with('success', 'School settings saved.');
+}
+
 /**
  * Display institution profile settings.
  */

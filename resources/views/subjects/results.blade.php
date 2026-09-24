@@ -27,12 +27,12 @@
                                 <p class="text-lg font-semibold">{{ $subject->code }}</p>
                             </div>
                             <div>
-                                <p class="text-sm font-medium text-gray-500">Programme</p>
-                                <p class="text-lg font-semibold">{{ $subject->programme->name ?? 'N/A' }}</p>
+                                <p class="text-sm font-medium text-gray-500">Class level</p>
+                                <p class="text-lg font-semibold">{{ \App\Support\FormLabel::label($subject->level) }}</p>
                             </div>
                             <div>
-                                <p class="text-sm font-medium text-gray-500">Semester</p>
-                                <p class="text-lg font-semibold">{{ $subject->semester->name ?? 'N/A' }}</p>
+                                <p class="text-sm font-medium text-gray-500">Type</p>
+                                <p class="text-lg font-semibold">{{ $subject->is_core ? 'Core' : 'Other' }}</p>
                             </div>
                         </div>
                     </div>
@@ -87,12 +87,12 @@
                             </div>
                             
                             <div>
-                                <label for="semester_id" class="block text-sm font-medium text-gray-700 mb-1">Semester</label>
+                                <label for="semester_id" class="block text-sm font-medium text-gray-700 mb-1">Term</label>
                                 <select id="semester_id" name="semester_id" class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md">
                                     <option value="">All Semesters</option>
                                     @foreach($semesters as $semester)
                                         <option value="{{ $semester->id }}" {{ request('semester_id') == $semester->id ? 'selected' : '' }}>
-                                            {{ $semester->name }}
+                                            {{ $semester->full_name }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -120,7 +120,7 @@
                                     <tr>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Academic Year</th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Term</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class Score</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Exam Score</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
@@ -148,7 +148,7 @@
                                                 <div class="text-sm text-gray-900">{{ $result->exam_score }}</div>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="text-sm font-medium text-gray-900">{{ $result->total_score }}</div>
+                                                <div class="text-sm font-medium text-gray-900">{{ $result->score }}</div>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 @php

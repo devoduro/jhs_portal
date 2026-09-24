@@ -81,13 +81,27 @@ class StudentFeeChargeImport implements ToCollection, WithHeadingRow, WithValida
                 continue;
             }
 
+            // Optional "term" column (e.g. "First Term"); defaults to the current term when the
+            // year is the current one.
+            $termName = trim((string) ($row['term'] ?? ''));
+            $term = $termName !== ''
+                ? \App\Models\Semester::where('academic_year_id', $academicYear->id)->where('name', 'like', $termName . '%')->first()
+                : \App\Models\Semester::where('academic_year_id', $academicYear->id)->where('is_current', true)->first();
+
+            if ($termName !== '' && !$term) {
+                $this->errors[] = "Term \"{$termName}\" not found in {$academicYearName} for student {$indexNumber}.";
+                $this->skipped++;
+                continue;
+            }
+
             StudentFeeCharge::updateOrCreate(
                 [
                     'student_id' => $student->id,
-                    'academic_year_id' => $academicYear->id,
+                    'semester_id' => $term?->id,
                     'category' => $category,
                 ],
                 [
+                    'academic_year_id' => $academicYear->id,
                     'amount' => (float) $amount,
                     'notes' => $row['notes'] ?? null,
                     'recorded_by' => Auth::id(),
