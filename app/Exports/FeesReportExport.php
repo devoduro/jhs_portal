@@ -20,20 +20,19 @@ class FeesReportExport implements FromCollection, WithHeadings, WithMapping
 
     public function headings(): array
     {
-        return ['Programme', 'Level', 'Students', 'Fee Amount', 'Expected', 'Collected', 'Balance', '% Collected'];
+        return ['Class', 'Pupils', 'Pupils Owing', 'Billed (Term)', 'Collected (Term)', '% Collected', 'Total Outstanding'];
     }
 
     public function map($row): array
     {
         return [
-            $row['programme'],
-            $row['level'],
-            $row['students'],
-            $row['fee_amount'] !== null ? number_format($row['fee_amount'], 2) : 'Not set',
-            number_format($row['expected'], 2),
-            number_format($row['collected'], 2),
-            number_format($row['balance'], 2),
+            $row['class'],
+            $row['pupils'],
+            $row['debtors'],
+            round($row['billed'], 2),
+            round($row['collected'], 2),
             $row['percentage'] . '%',
+            round($row['outstanding'], 2),
         ];
     }
 }
