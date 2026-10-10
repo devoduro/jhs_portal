@@ -2,851 +2,218 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AcademicYear;
-use App\Models\Subject;
-use App\Models\GradeScheme;
-use App\Models\Programme;
+use App\Models\ClassGroup;
 use App\Models\Result;
 use App\Models\Semester;
-use App\Models\Student;
+use App\Models\Subject;
+use App\Services\TerminalReportService;
 use App\Traits\ScopesToTeacher;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
 
+/**
+ * "All Results": a searchable list of every score recorded, and one score's details.
+ *
+ * Scores are only ever entered or changed on the class score sheet (ScoreSheetController),
+ * which keeps the class score / exam score split, grading and the class snapshot consistent.
+ * The old one-at-a-time add/edit and spreadsheet upload actions now take staff there.
+ *
+ * Teachers only see scores for subjects they teach or classes they are class teacher of.
+ */
 class ResultController extends Controller
 {
     use ScopesToTeacher;
 
-    /**
-     * Display a listing of the resource.
-     */
     public function index(Request $request)
     {
-        $query = Result::with(['student', 'subject', 'academicYear', 'semester']);
+        $query = $this->visibleResults()->with(['student', 'subject', 'semester.academicYear', 'classGroup']);
 
-        if ($this->isScopedTeacher()) {
-            $query->whereIn('subject_id', $this->teacherSubjectIds());
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->whereHas('student', fn ($q) => $q->where('full_name', 'like', "%{$search}%")->orWhere('index_number', 'like', "%{$search}%"));
         }
 
-        // Search by student name or index number
-        if ($request->has('search') && $request->search) {
-            $searchTerm = $request->search;
-            $query->whereHas('student', function($q) use ($searchTerm) {
-                $q->where('full_name', 'like', "%{$searchTerm}%")
-                  ->orWhere('index_number', 'like', "%{$searchTerm}%");
-            });
+        foreach (['semester_id', 'class_group_id', 'subject_id', 'student_id'] as $filter) {
+            if ($request->filled($filter)) {
+                $query->where($filter, $request->input($filter));
+            }
         }
 
-        // Filter by academic year
-        if ($request->has('academic_year_id') && $request->academic_year_id) {
-            $query->where('academic_year_id', $request->academic_year_id);
-        }
-
-        // Filter by semester
-        if ($request->has('semester_id') && $request->semester_id) {
-            $query->where('semester_id', $request->semester_id);
-        }
-
-        // Filter by programme
-        if ($request->has('programme_id') && $request->programme_id) {
-            $query->whereHas('student', function($q) use ($request) {
-                $q->where('programme_id', $request->programme_id);
-            });
-        }
-
-        // Filter by subject
-        if ($request->has('subject_id') && $request->subject_id) {
-            $query->where('subject_id', $request->subject_id);
-        }
-
-        // Filter by grade range
-        if ($request->has('min_score') && $request->min_score) {
+        if ($request->filled('min_score')) {
             $query->where('score', '>=', $request->min_score);
         }
-        if ($request->has('max_score') && $request->max_score) {
+        if ($request->filled('max_score')) {
             $query->where('score', '<=', $request->max_score);
         }
 
-        $results = $query->orderBy('created_at', 'desc')
-                        ->paginate(20)
-                        ->withQueryString();
+        $results = $query->orderByDesc('semester_id')->orderBy('class_group_id')->orderByDesc('score')
+            ->paginate(25)->withQueryString();
 
-        // Get data for filter dropdowns
-        $academicYears = AcademicYear::all();
-        $semesters = Semester::all();
-        $programmes = Programme::all();
-        $subjects = $this->scopeToTeacher(Subject::query())->get();
+        $terms = Semester::with('academicYear')->get()
+            ->sortByDesc(fn ($t) => [$t->academicYear?->start_date?->timestamp ?? 0, $t->semester_number])->values();
+        $classGroups = $this->visibleClasses();
+        $subjects = Subject::whereIn('id', $this->visibleResults()->select('subject_id')->distinct())
+            ->orderBy('level')->orderBy('title')->get();
 
-        return view('results.index', compact(
-            'results',
-            'academicYears',
-            'semesters',
-            'programmes',
-            'subjects'
-        ));
+        return view('results.index', compact('results', 'terms', 'classGroups', 'subjects'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create(Request $request)
-    {
-        $students = $this->scopedStudents()->orderBy('full_name')->get();
-        $subjects = $this->scopeToTeacher(Subject::orderBy('code'))->get();
-        $academicYears = AcademicYear::orderBy('start_date', 'desc')->get();
-        $semesters = Semester::all();
-        $gradeSchemes = GradeScheme::all();
-
-        // Pre-fill from a specific student/subject row (e.g. the "Add Result" link on a
-        // subject's roster page) so the saved result lands on exactly that registration's
-        // academic year/semester, rather than requiring the four fields to be picked blind.
-        $student = $request->filled('student_id') ? Student::find($request->student_id) : null;
-        $subject = $request->filled('subject_id') ? Subject::find($request->subject_id) : null;
-        $academicYearId = $request->input('academic_year_id');
-        $semesterId = $request->input('semester_id');
-
-        return view('results.create', compact(
-            'students',
-            'subjects',
-            'academicYears',
-            'semesters',
-            'gradeSchemes',
-            'student',
-            'subject',
-            'academicYearId',
-            'semesterId'
-        ));
-    }
-
-    /**
-     * Students a teacher may enter results for (those registered in their own
-     * subjects), or all students for staff with broader access.
-     */
-    protected function scopedStudents()
-    {
-        if ($this->isScopedTeacher()) {
-            return Student::whereIn('id', $this->teacherStudentIds());
-        }
-
-        return Student::query();
-    }
-
-    /**
-     * Abort if a scoped teacher is trying to access a result outside their own subjects.
-     */
-    protected function denyIfNotOwnCourse(Result $result): void
-    {
-        if ($this->isScopedTeacher() && !in_array($result->subject_id, $this->teacherSubjectIds())) {
-            abort(403, 'You can only manage results for subjects assigned to you.');
-        }
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'student_id' => 'required|exists:students,id',
-            'subject_id' => 'required|exists:subjects,id',
-            'academic_year_id' => 'required|exists:academic_years,id',
-            'semester_id' => 'required|exists:semesters,id',
-            'score' => 'required|numeric|min:0|max:100',
-            'assessment_score' => 'nullable|numeric|min:0|max:40',
-            'exam_score' => 'nullable|numeric|min:0|max:60',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->route('results.create')
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        if ($this->isScopedTeacher() && !in_array((int) $request->input('subject_id'), $this->teacherSubjectIds())) {
-            return redirect()->route('results.create')
-                ->withErrors(['subject_id' => 'You can only enter results for subjects assigned to you.'])
-                ->withInput();
-        }
-
-        // Check if result already exists
-        $existingResult = Result::where([
-            'student_id' => $request->input('student_id'),
-            'subject_id' => $request->input('subject_id'),
-            'academic_year_id' => $request->input('academic_year_id'),
-            'semester_id' => $request->input('semester_id'),
-        ])->first();
-
-        if ($existingResult) {
-            return redirect()->route('results.create')
-                ->withErrors(['general' => 'Result already exists for this student, subject, academic year, and semester.'])
-                ->withInput();
-        }
-
-        // Calculate grade and grade point based on score
-        $score = $request->input('score');
-        $grade = GradeScheme::getGrade($score);
-        $gradePoint = GradeScheme::getGradePoint($score);
-        $remark = GradeScheme::getRemark($score);
-
-        // Create result
-        Result::create([
-            'student_id' => $request->input('student_id'),
-            'subject_id' => $request->input('subject_id'),
-            'academic_year_id' => $request->input('academic_year_id'),
-            'semester_id' => $request->input('semester_id'),
-            'score' => $score,
-            'grade' => $grade,
-            'grade_point' => $gradePoint,
-            'remark' => $remark,
-        ]);
-
-        return redirect()->route('results.index')
-            ->with('success', 'Result created successfully.');
-    }
-
-    /**
-     * Display the specified resource.
-     */
     public function show(Result $result)
     {
-        $this->denyIfNotOwnCourse($result);
+        $this->authorizeResult($result);
+        $result->load(['student.classGroup', 'subject', 'semester.academicYear', 'classGroup', 'academicYear']);
 
-        return view('results.show', compact('result'));
+        $classGroup = $result->classGroup ?? TerminalReportService::classFor($result->student, $result->semester);
+
+        // Position in this subject among the class, for context.
+        $position = null;
+        $classSize = null;
+        if ($classGroup) {
+            $scores = Result::where('semester_id', $result->semester_id)
+                ->where('subject_id', $result->subject_id)
+                ->where('class_group_id', $classGroup->id)
+                ->pluck('score', 'student_id')
+                ->map(fn ($s) => (float) $s)
+                ->all();
+            $positions = TerminalReportService::rank($scores);
+            $position = $positions[$result->student_id] ?? null;
+            $classSize = count($scores);
+        }
+
+        return view('results.show', compact('result', 'classGroup', 'position', 'classSize'));
     }
 
     /**
-     * Show the form for editing the specified resource.
+     * Editing a single score happens on that class's score sheet for the subject and term.
      */
     public function edit(string $id)
     {
-        $result = Result::findOrFail($id);
-        $this->denyIfNotOwnCourse($result);
+        $result = Result::with('student')->findOrFail($id);
+        $this->authorizeResult($result);
 
-        $students = $this->scopedStudents()->orderBy('full_name')->get();
-        $subjects = $this->scopeToTeacher(Subject::orderBy('code'))->get();
-        $academicYears = AcademicYear::orderBy('start_date', 'desc')->get();
-        $semesters = Semester::all();
-        $gradeSchemes = GradeScheme::all();
-
-        return view('results.edit', compact(
-            'result',
-            'students',
-            'subjects',
-            'academicYears',
-            'semesters',
-            'gradeSchemes'
-        ));
+        return $this->toScoreSheet($result->classGroup ?? $result->student?->classGroup, $result->subject_id, $result->semester_id)
+            ?? redirect()->route('results.show', $result)->with('error', 'This pupil is not in a class, so the score cannot be edited on a score sheet. Place the pupil in a class first.');
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, string $id)
     {
-        $result = Result::findOrFail($id);
-        $this->denyIfNotOwnCourse($result);
-
-        $validator = Validator::make($request->all(), [
-            'student_id' => 'required|exists:students,id',
-            'subject_id' => 'required|exists:subjects,id',
-            'academic_year_id' => 'required|exists:academic_years,id',
-            'semester_id' => 'required|exists:semesters,id',
-            'score' => 'required|numeric|min:0|max:100',
-            'assessment_score' => 'nullable|numeric|min:0|max:40',
-            'exam_score' => 'nullable|numeric|min:0|max:60',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->route('results.edit', $id)
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        if ($this->isScopedTeacher() && !in_array((int) $request->input('subject_id'), $this->teacherSubjectIds())) {
-            return redirect()->route('results.edit', $id)
-                ->withErrors(['subject_id' => 'You can only assign results to subjects assigned to you.'])
-                ->withInput();
-        }
-
-        // Check if result already exists (excluding this one)
-        $existingResult = Result::where([
-            'student_id' => $request->input('student_id'),
-            'subject_id' => $request->input('subject_id'),
-            'academic_year_id' => $request->input('academic_year_id'),
-            'semester_id' => $request->input('semester_id'),
-        ])
-        ->where('id', '!=', $id)
-        ->first();
-
-        if ($existingResult) {
-            return redirect()->route('results.edit', $id)
-                ->withErrors(['general' => 'Result already exists for this student, subject, academic year, and semester.'])
-                ->withInput();
-        }
-
-        // Calculate grade and grade point based on score
-        $score = $request->input('score');
-        $grade = GradeScheme::getGrade($score);
-        $gradePoint = GradeScheme::getGradePoint($score);
-        $remark = GradeScheme::getRemark($score);
-
-        // Update result
-        $result->update([
-            'student_id' => $request->input('student_id'),
-            'subject_id' => $request->input('subject_id'),
-            'academic_year_id' => $request->input('academic_year_id'),
-            'semester_id' => $request->input('semester_id'),
-            'score' => $score,
-            'grade' => $grade,
-            'grade_point' => $gradePoint,
-            'remark' => $remark,
-            'assessment_score' => $request->input('assessment_score'),
-            'exam_score' => $request->input('exam_score'),
-        ]);
-
-        return redirect()->route('results.index')
-            ->with('success', 'Result updated successfully.');
+        return $this->edit($id);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * "Add result" links (with optional student/subject/term) open the matching score sheet.
      */
+    public function create(Request $request)
+    {
+        $student = $request->filled('student_id') ? \App\Models\Student::with('classGroup')->find($request->student_id) : null;
+
+        return ($student ? $this->toScoreSheet($student->classGroup, $request->input('subject_id'), $request->input('semester_id')) : null)
+            ?? redirect()->route('scores.index')->with('warning', 'Scores are entered for a whole class at once. Choose the class and subject below.');
+    }
+
+    public function store(Request $request)
+    {
+        return $this->create($request);
+    }
+
     public function destroy(string $id)
     {
-        $result = Result::findOrFail($id);
-        $this->denyIfNotOwnCourse($result);
+        abort_unless(auth()->user()->can('manage-results'), 403);
 
+        $result = Result::with(['student', 'subject'])->findOrFail($id);
+        $label = ($result->student->full_name ?? 'Pupil') . ' — ' . ($result->subject->title ?? 'subject');
         $result->delete();
 
-        return redirect()->route('results.index')
-            ->with('success', 'Result deleted successfully.');
+        return redirect()->route('results.index')->with('success', "Score deleted: {$label}.");
     }
 
-    /**
-     * Search results.
-     */
+    // Older entry points kept so bookmarks and links keep working.
     public function search(Request $request)
     {
-        $query = $request->input('query');
-
-        $results = Result::with(['student', 'subject', 'academicYear', 'semester'])
-            ->when($this->isScopedTeacher(), fn ($q) => $q->whereIn('subject_id', $this->teacherSubjectIds()))
-            ->where(function ($outer) use ($query) {
-                $outer->whereHas('student', function ($q) use ($query) {
-                    $q->where('full_name', 'like', "%{$query}%")
-                        ->orWhere('index_number', 'like', "%{$query}%");
-                })
-                ->orWhereHas('subject', function ($q) use ($query) {
-                    $q->where('code', 'like', "%{$query}%")
-                        ->orWhere('title', 'like', "%{$query}%");
-                });
-            })
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
-
-        return view('results.index', compact('results', 'query'));
+        return redirect()->route('results.index', $request->only('search'));
     }
 
-    /**
-     * Filter results by academic year.
-     */
     public function filterByAcademicYear(Request $request)
     {
-        $academicYearId = $request->input('academic_year_id');
-
-        $results = Result::with(['student', 'subject', 'academicYear', 'semester'])
-            ->where('academic_year_id', $academicYearId)
-            ->when($this->isScopedTeacher(), fn ($q) => $q->whereIn('subject_id', $this->teacherSubjectIds()))
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
-
-        $academicYear = AcademicYear::findOrFail($academicYearId);
-
-        return view('results.index', compact('results', 'academicYear'));
+        return redirect()->route('results.index');
     }
 
-    /**
-     * Filter results by semester.
-     */
     public function filterBySemester(Request $request)
     {
-        $semesterId = $request->input('semester_id');
-
-        $results = Result::with(['student', 'subject', 'academicYear', 'semester'])
-            ->where('semester_id', $semesterId)
-            ->when($this->isScopedTeacher(), fn ($q) => $q->whereIn('subject_id', $this->teacherSubjectIds()))
-            ->orderBy('created_at', 'desc')
-            ->paginate(20);
-
-        $semester = Semester::findOrFail($semesterId);
-
-        return view('results.index', compact('results', 'semester'));
+        return redirect()->route('results.index', array_filter(['semester_id' => $request->input('semester_id')]));
     }
 
-    /**
-     * Filter results by student.
-     */
     public function filterByStudent(Request $request)
     {
-        $studentId = $request->input('student_id');
-
-        if ($this->isScopedTeacher() && !in_array((int) $studentId, $this->teacherStudentIds())) {
-            abort(403, 'You can only view results for students in your own subjects.');
-        }
-
-        $results = Result::with(['student', 'subject', 'academicYear', 'semester'])
-            ->where('student_id', $studentId)
-            ->when($this->isScopedTeacher(), fn ($q) => $q->whereIn('subject_id', $this->teacherSubjectIds()))
-            ->orderBy('academic_year_id', 'desc')
-            ->orderBy('semester_id', 'asc')
-            ->paginate(20);
-
-        $student = Student::findOrFail($studentId);
-
-        return view('results.index', compact('results', 'student'));
+        return redirect()->route('results.index', array_filter(['student_id' => $request->input('student_id')]));
     }
 
-    /**
-     * Filter results by subject.
-     */
     public function filterBySubject(Request $request)
     {
-        $subjectId = $request->input('subject_id');
-
-        if ($this->isScopedTeacher() && !in_array((int) $subjectId, $this->teacherSubjectIds())) {
-            abort(403, 'You can only view results for subjects assigned to you.');
-        }
-
-        $results = Result::with(['student', 'subject', 'academicYear', 'semester'])
-            ->where('subject_id', $subjectId)
-            ->orderBy('score', 'desc')
-            ->paginate(20);
-
-        $subject = Subject::findOrFail($subjectId);
-
-        return view('results.index', compact('results', 'subject'));
+        return redirect()->route('results.index', array_filter(['subject_id' => $request->input('subject_id')]));
     }
 
-    /**
-     * Bulk create results.
-     */
     public function bulkCreate()
     {
-        $subjects = $this->scopeToTeacher(Subject::orderBy('code'))->get();
-        $academicYears = AcademicYear::orderBy('start_date', 'desc')->get();
-        $semesters = Semester::all();
-
-        return view('results.bulk_create', compact('subjects', 'academicYears', 'semesters'));
+        return redirect()->route('scores.index')->with('warning', 'Scores are now entered on the class score sheet: choose the class, then the subject.');
     }
 
-    /**
-     * Download template for bulk results upload.
-     */
-    public function downloadTemplate()
-    {
-        // Check if PhpSpreadsheet is available, if not fallback to CSV
-        if (!class_exists('\PhpOffice\PhpSpreadsheet\Spreadsheet')) {
-            return $this->downloadCsvTemplate();
-        }
-
-        // Create Excel file using PhpSpreadsheet
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Results Template');
-
-        // Set column headers with formatting
-        $sheet->setCellValue('A1', 'index_number');
-        $sheet->setCellValue('B1', 'grade');
-        $sheet->setCellValue('C1', 'score');
-
-        // Format header row
-        $sheet->getStyle('A1:C1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:C1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID);
-        $sheet->getStyle('A1:C1')->getFill()->getStartColor()->setRGB('4472C4');
-        $sheet->getStyle('A1:C1')->getFont()->getColor()->setRGB('FFFFFF');
-
-        // Add sample data
-        $sheet->setCellValue('A2', 'STU12345');
-        $sheet->setCellValue('B2', 'A');
-        $sheet->setCellValue('C2', '90');
-
-        $sheet->setCellValue('A3', 'STU67890');
-        $sheet->setCellValue('B3', 'B+');
-        $sheet->setCellValue('C3', '78');
-
-        $sheet->setCellValue('A4', 'STU24680');
-        $sheet->setCellValue('B4', '');
-        $sheet->setCellValue('C4', '75');
-
-        // Format data rows
-        $sheet->getStyle('A2:C4')->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
-        $sheet->getStyle('A2:C4')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT);
-
-        // Add instructions
-        $sheet->setCellValue('A6', 'Instructions:');
-        $sheet->getStyle('A6')->getFont()->setBold(true);
-        $sheet->getStyle('A6')->getFont()->setSize(12);
-
-        $sheet->setCellValue('A7', '1. index_number: Student index number (required)');
-        $sheet->setCellValue('A8', '2. grade: Either a letter grade (A, B+, etc.) or leave empty if providing score (optional if score is provided)');
-        $sheet->setCellValue('A9', '3. score: Total score (0-100) (required if grade is empty).');
-
-        // Add grading scheme information
-        $sheet->setCellValue('A12', 'Grading Scheme:');
-        $sheet->getStyle('A12')->getFont()->setBold(true);
-        $sheet->getStyle('A12')->getFont()->setSize(12);
-
-        $sheet->setCellValue('A13', 'Grade');
-        $sheet->setCellValue('B13', 'Score Range');
-        $sheet->setCellValue('C13', 'Grade Point');
-        $sheet->getStyle('A13:C13')->getFont()->setBold(true);
-        $sheet->getStyle('A13:C13')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID);
-        $sheet->getStyle('A13:C13')->getFill()->getStartColor()->setRGB('D9D9D9');
-
-        $grades = [
-            ['A1', '80-100', '1'],
-            ['B2', '75-79', '2'],
-            ['B3', '70-74', '3'],
-            ['C4', '65-69', '4'],
-            ['C5', '60-64', '5'],
-            ['C6', '55-59', '6'],
-            ['D7', '50-54', '7'],
-            ['E8', '45-49', '8'],
-            ['F9', '0-44', '9'],
-        ];
-
-        $row = 14;
-        foreach ($grades as $grade) {
-            $sheet->setCellValue('A' . $row, $grade[0]);
-            $sheet->setCellValue('B' . $row, $grade[1]);
-            $sheet->setCellValue('C' . $row, $grade[2]);
-            $row++;
-        }
-
-        $sheet->getStyle('A13:C' . ($row - 1))->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
-
-        // Auto-size columns
-        foreach (range('A', 'D') as $column) {
-            $sheet->getColumnDimension($column)->setAutoSize(true);
-        }
-
-        // Create Excel file
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $filename = 'results_template_' . date('Y-m-d') . '.xlsx';
-        $tempPath = storage_path('app/temp/' . $filename);
-
-        // Ensure the temp directory exists
-        if (!file_exists(storage_path('app/temp'))) {
-            mkdir(storage_path('app/temp'), 0755, true);
-        }
-
-        $writer->save($tempPath);
-
-        return response()->download($tempPath, $filename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ])->deleteFileAfterSend(true);
-    }
-
-    /**
-     * Fallback method to download CSV template if PhpSpreadsheet is not available
-     */
-    private function downloadCsvTemplate()
-    {
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="results_template.csv"',
-        ];
-
-        $callback = function() {
-            $file = fopen('php://output', 'w');
-
-            // Add headers
-            fputcsv($file, ['index_number', 'grade', 'score']);
-
-            // Add sample data
-            fputcsv($file, ['STU12345', 'A', '90']);
-            fputcsv($file, ['STU67890', 'B+', '78']);
-            fputcsv($file, ['STU24680', '', '75']);
-
-            // Add notes
-            fputcsv($file, []);
-            fputcsv($file, ['Notes:']);
-            fputcsv($file, ['1. index_number: Student index number (required)']);
-            fputcsv($file, ['2. grade: Either a letter grade (A, B+, etc.) or a numeric score (0-100) (required)']);
-            fputcsv($file, ['3. score: Total score (0-100) (required)']);
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
-    }
-
-    /**
-     * Store bulk results.
-     */
     public function bulkStore(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'subject_id' => 'required|exists:subjects,id',
-            'academic_year_id' => 'required|exists:academic_years,id',
-            'semester_id' => 'required|exists:semesters,id',
-            'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:10240',
-        ]);
+        return $this->bulkCreate();
+    }
 
-        if ($validator->fails()) {
-            return redirect()->back()
-                ->withErrors($validator)
-                ->withInput();
+    public function downloadTemplate()
+    {
+        return $this->bulkCreate();
+    }
+
+    private function toScoreSheet(?ClassGroup $classGroup, $subjectId, $semesterId)
+    {
+        if (!$classGroup) {
+            return null;
         }
 
-        if ($this->isScopedTeacher() && !in_array((int) $request->input('subject_id'), $this->teacherSubjectIds())) {
-            return redirect()->back()
-                ->withErrors(['subject_id' => 'You can only enter results for subjects assigned to you.'])
-                ->withInput();
+        $subject = $subjectId ? Subject::find($subjectId) : null;
+        $termId = $semesterId ?: optional(Semester::where('is_current', true)->first())->id;
+
+        if ($subject && (int) $subject->level === (int) $classGroup->level) {
+            return redirect()->route('scores.sheet', ['classGroup' => $classGroup, 'subject' => $subject, 'semester_id' => $termId]);
         }
 
-        $subjectId = $request->input('subject_id');
-        $academicYearId = $request->input('academic_year_id');
-        $semesterId = $request->input('semester_id');
-
-        // Begin transaction
-        DB::beginTransaction();
-
-        try {
-            // Process the uploaded file
-            $file = $request->file('file');
-            $path = $file->getRealPath();
-            $extension = strtolower($file->getClientOriginalExtension());
-            $processed = 0;
-            $skipped = 0;
-            $errors = [];
-
-            // Check if the file is Excel or CSV
-            if (in_array($extension, ['xlsx', 'xls'])) {
-                // Handle Excel file
-                if (!class_exists('\PhpOffice\PhpSpreadsheet\IOFactory')) {
-                    throw new \Exception('PhpSpreadsheet library is not available. Please upload a CSV file instead.');
-                }
-
-                $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
-                $spreadsheet = $reader->load($path);
-                $worksheet = $spreadsheet->getActiveSheet();
-                $rows = $worksheet->toArray();
-
-                // Get headers from first row
-                $header = array_map('trim', $rows[0]);
-
-                // Process data rows
-                $data = array_slice($rows, 1);
-
-                // Continue with processing like CSV
-                $this->processResultsData($header, $data, $subjectId, $academicYearId, $semesterId, $processed, $skipped, $errors);
-            }
-            elseif (($handle = fopen($path, 'r')) !== false) {
-                // Read the header row
-                $header = array_map('trim', fgetcsv($handle, 1000, ','));
-
-                // Collect all data rows
-                $data = [];
-                while (($row = fgetcsv($handle, 1000, ',')) !== false) {
-                    $data[] = $row;
-                }
-
-                fclose($handle);
-
-                // Process the data
-                $this->processResultsData($header, $data, $subjectId, $academicYearId, $semesterId, $processed, $skipped, $errors);
-            } else {
-                throw new \Exception('Unsupported file format. Please upload a CSV or Excel file.');
-            }
-
-            DB::commit();
-
-            $message = "Successfully processed {$processed} results.";
-
-            if ($skipped > 0) {
-                $message .= " Skipped {$skipped} rows.";
-            }
-
-            if (!empty($errors)) {
-                $message .= " Errors: " . implode(', ', array_slice($errors, 0, 3));
-
-                if (count($errors) > 3) {
-                    $message .= " and " . (count($errors) - 3) . " more.";
-                }
-            }
-
-            return redirect()->route('results.index')
-                ->with('success', $message);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            return redirect()->route('results.bulk-create')
-                ->withErrors(['general' => 'An error occurred: ' . $e->getMessage()])
-                ->withInput();
-        }
+        return redirect()->route('scores.index', ['class_group_id' => $classGroup->id, 'semester_id' => $termId]);
     }
 
     /**
-     * Process results data from uploaded file
+     * Results the signed-in user may see.
      */
-    private function processResultsData(array $header, array $data, $subjectId, $academicYearId, $semesterId, &$processed, &$skipped, &$errors)
+    private function visibleResults(): Builder
     {
-        // Debug: Log the headers found in the file
-        \Log::info('File Headers found: ' . implode(', ', $header));
+        $query = Result::query();
 
-        // Convert headers to lowercase and trim whitespace for case-insensitive matching
-        $headerLower = array_map(function($item) {
-            return strtolower(trim($item));
-        }, $header);
+        if ($this->isScopedTeacher()) {
+            $teacherId = $this->authTeacherId() ?? 0;
+            $classIds = ClassGroup::where('class_teacher_id', $teacherId)->pluck('id');
 
-        // Debug: Log the processed headers
-        \Log::info('Processed headers: ' . implode(', ', $headerLower));
-
-        // Map column indices (case-insensitive)
-        $indexNumberIdx = array_search('index_number', $headerLower);
-        if ($indexNumberIdx === false) {
-            // Try alternative column names
-            $possibleIndexColumns = ['indexnumber', 'student_id', 'studentid', 'id', 'student', 'index', 'student index', 'student_index', 'studentindex'];
-
-            foreach ($possibleIndexColumns as $colName) {
-                $indexNumberIdx = array_search($colName, $headerLower);
-                if ($indexNumberIdx !== false) {
-                    break;
-                }
-            }
-
-            // If still not found, try partial matching
-            if ($indexNumberIdx === false) {
-                foreach ($headerLower as $idx => $colName) {
-                    if (strpos($colName, 'index') !== false || strpos($colName, 'student') !== false) {
-                        $indexNumberIdx = $idx;
-                        break;
-                    }
-                }
-            }
+            $query->where(fn ($q) => $q->whereIn('subject_id', $this->teacherSubjectIds())->orWhereIn('class_group_id', $classIds));
         }
 
-        $gradeIdx = array_search('grade', $headerLower);
-        $scoreIdx = array_search('score', $headerLower);
-        if ($scoreIdx === false) {
-            // Try alternative column names for score
-            $possibleScoreColumns = ['marks', 'total', 'total_score', 'mark', 'points', 'result'];
+        return $query;
+    }
 
-            foreach ($possibleScoreColumns as $colName) {
-                $scoreIdx = array_search($colName, $headerLower);
-                if ($scoreIdx !== false) {
-                    break;
-                }
-            }
+    private function visibleClasses()
+    {
+        $classes = ClassGroup::orderBy('level')->orderBy('name');
+
+        if ($this->isScopedTeacher()) {
+            $classes->whereIn('id', $this->visibleResults()->select('class_group_id')->distinct());
         }
 
-        // Check if required columns exist
-        if ($indexNumberIdx === false) {
-            throw new \Exception('File must contain a column for student index number. Found columns: ' . implode(', ', $header));
-        }
+        return $classes->get();
+    }
 
-        // Debug: Log which column was identified as the index number
-        \Log::info('Using column "' . $header[$indexNumberIdx] . '" (index ' . $indexNumberIdx . ') as student index number');
-
-        if ($gradeIdx === false && $scoreIdx === false) {
-            throw new \Exception('File must contain either a grade or score column');
-        }
-
-        if ($scoreIdx !== false) {
-            \Log::info('Using column "' . $header[$scoreIdx] . '" (index ' . $scoreIdx . ') as score');
-        }
-
-        if ($gradeIdx !== false) {
-            \Log::info('Using column "' . $header[$gradeIdx] . '" (index ' . $gradeIdx . ') as grade');
-        }
-
-        // Process each row
-        foreach ($data as $rowIndex => $row) {
-            // Skip empty rows
-            if (!isset($row[$indexNumberIdx]) || empty($row[$indexNumberIdx]) ||
-                (is_string($row[$indexNumberIdx]) && strpos($row[$indexNumberIdx], 'Note') !== false)) {
-                $skipped++;
-                continue;
-            }
-
-            // Find student by index number
-            $indexNumber = trim($row[$indexNumberIdx]);
-            $student = Student::where('index_number', $indexNumber)->first();
-
-            if (!$student) {
-                $errors[] = "Student with index number {$indexNumber} not found (row " . ($rowIndex + 2) . ").";
-                $skipped++;
-                continue;
-            }
-
-            // Parse score from either direct score or grade
-            $score = null;
-
-            // If score column exists and has a value, use it directly
-            if ($scoreIdx !== false && isset($row[$scoreIdx]) && !empty($row[$scoreIdx]) && is_numeric($row[$scoreIdx])) {
-                $score = (float) $row[$scoreIdx];
-            }
-            // Otherwise try to get score from grade
-            elseif ($gradeIdx !== false && isset($row[$gradeIdx]) && !empty($row[$gradeIdx])) {
-                // If grade is numeric, use it directly
-                if (is_numeric($row[$gradeIdx])) {
-                    $score = (float) $row[$gradeIdx];
-                } else {
-                    // Convert letter grade to score
-                    $letterGrade = strtoupper(trim($row[$gradeIdx]));
-                    $score = GradeScheme::getScoreFromGrade($letterGrade);
-
-                    if ($score === null) {
-                        $errors[] = "Invalid grade format for student {$indexNumber}: {$row[$gradeIdx]} (row " . ($rowIndex + 2) . ").";
-                        $skipped++;
-                        continue;
-                    }
-                }
-            } else {
-                $errors[] = "No grade or score provided for student {$indexNumber} (row " . ($rowIndex + 2) . ").";
-                $skipped++;
-                continue;
-            }
-
-            // Get grade details
-            $grade = GradeScheme::getGrade($score);
-            $gradePoint = GradeScheme::getGradePoint($score);
-            $remark = GradeScheme::getRemark($score);
-
-            // Check if result already exists
-            $existingResult = Result::where([
-                'student_id' => $student->id,
-                'subject_id' => $subjectId,
-                'academic_year_id' => $academicYearId,
-                'semester_id' => $semesterId,
-            ])->first();
-
-            if ($existingResult) {
-                // Update existing result
-                $existingResult->update([
-                    'score' => $score,
-                    'grade' => $grade,
-                    'grade_point' => $gradePoint,
-                    'remark' => $remark,
-                ]);
-            } else {
-                // Create new result
-                Result::create([
-                    'student_id' => $student->id,
-                    'subject_id' => $subjectId,
-                    'academic_year_id' => $academicYearId,
-                    'semester_id' => $semesterId,
-                    'score' => $score,
-                    'grade' => $grade,
-                    'grade_point' => $gradePoint,
-                    'remark' => $remark,
-                ]);
-            }
-
-            $processed++;
-        }
+    private function authorizeResult(Result $result): void
+    {
+        abort_unless($this->visibleResults()->whereKey($result->id)->exists(), 403, 'You can only view scores for your own classes and subjects.');
     }
 }

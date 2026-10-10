@@ -29,6 +29,24 @@ class BasicSchoolSeeder extends Seeder
         $this->seedFeeCategories();
         $this->seedSubjects();
         $this->seedSettings();
+        $this->seedSmsTemplates();
+    }
+
+    private function seedSmsTemplates(): void
+    {
+        $templates = [
+            'Fees reminder' => 'Dear {parent}, this is a reminder that {pupil} ({class}) has an outstanding fees balance of {balance}. Kindly pay at the school office. Thank you. - {school}',
+            'PTA meeting' => 'Dear {parent}, you are invited to the PTA meeting on [day, date] at [time] at the school. Your presence is important. - {school}',
+            'Vacation notice' => 'Dear {parent}, school vacates on [date]. Terminal reports will be given out on that day. Next term begins on [date]. - {school}',
+            'Reopening reminder' => 'Dear {parent}, school reopens on [date]. Please ensure {first_name} reports early with all items needed. - {school}',
+            'Exams timetable' => 'Dear {parent}, end-of-term examinations start on [date]. Please help {first_name} prepare well. - {school}',
+            'Holiday / closure' => 'Dear {parent}, please note that school will be closed on [date] for [reason]. Classes resume on [date]. - {school}',
+            'Staff meeting' => 'Dear {name}, there will be a staff meeting on [day] at [time] in the staff common room. - {school}',
+        ];
+
+        foreach ($templates as $name => $message) {
+            \App\Models\SmsTemplate::firstOrCreate(['name' => $name], ['message' => $message]);
+        }
     }
 
     private function seedGradeSchemes(): void

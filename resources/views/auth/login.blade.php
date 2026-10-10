@@ -1,164 +1,41 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+<x-auth-split title="Welcome back" subtitle="Staff sign in — please enter your details" page-title="Staff sign in">
+    <form method="POST" action="{{ route('login') }}" class="space-y-5" data-auth-form>
+        @csrf
 
-    <title>{{ config('app.name', \App\Models\Setting::get('institution_name', 'Your School Name')) }} - Login</title>
+        <div>
+            <label for="email" class="mb-1.5 block text-sm font-medium text-gray-800">Email address</label>
+            <input id="email" name="email" type="email" value="{{ old('email') }}" required autofocus autocomplete="username"
+                   class="block w-full rounded-md border px-3.5 py-3 text-sm shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100 {{ $errors->has('email') ? 'border-red-400' : 'border-gray-300' }}">
+        </div>
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: {
-                            50: '#f0f9ff',
-                            100: '#e0f2fe',
-                            200: '#bae6fd',
-                            300: '#7dd3fc',
-                            400: '#38bdf8',
-                            500: '#0ea5e9',
-                            600: '#0284c7',
-                            700: '#0369a1',
-                            800: '#075985',
-                            900: '#0c4a6e',
-                        },
-                    },
-                    fontFamily: {
-                        sans: ['Poppins', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
-    <style>
-        [x-cloak] { display: none !important; }
-        
-        .gradient-bg {
-            background: linear-gradient(135deg, #0ea5e9 0%, #075985 100%);
-        }
-        
-        .gradient-text {
-            background: linear-gradient(135deg, #0ea5e9 0%, #075985 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-    </style>
-</head>
-<body class="font-sans antialiased bg-gray-50">
-    <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0">
-        <div class="w-full sm:max-w-md mt-6 px-6 py-4 bg-white shadow-md overflow-hidden sm:rounded-lg">
-            <div class="flex justify-center mb-8">
-                <div class="text-center">
-                    @php($institutionLogo = \App\Models\Setting::get('institution_logo'))
-                    @if($institutionLogo)
-                        <img src="{{ asset('storage/' . $institutionLogo) }}" alt="{{ \App\Models\Setting::get('institution_name', 'Your School Name') }}" class="h-24 mx-auto mb-4">
-                    @else
-                        <img src="{{ asset('images/logos/logo.png') }}" alt="{{ \App\Models\Setting::get('institution_name', 'Your School Name') }}" class="h-24 mx-auto mb-4">
-                    @endif
-                    <p class="text-gray-500 text-sm">Sign in to your account</p>
-                </div>
-            </div>
-            
-            @if (session('status'))
-                <div class="mb-4 font-medium text-sm text-green-600">
-                    {{ session('status') }}
-                </div>
-            @endif
-            
-            @if ($errors->any())
-                <div class="mb-4">
-                    <div class="font-medium text-red-600">
-                        {{ __('Whoops! Something went wrong.') }}
-                    </div>
-
-                    <ul class="mt-3 list-disc list-inside text-sm text-red-600">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
-            
-            <form method="POST" action="{{ route('login') }}" class="space-y-6">
-                @csrf
-                
-                <div>
-                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
-                    <div class="mt-1 relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-envelope text-gray-400"></i>
-                        </div>
-                        <input id="email" name="email" type="email" value="{{ old('email') }}" required autofocus 
-                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
-                    </div>
-                </div>
-                
-                <div>
-                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                    <div class="mt-1 relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-lock text-gray-400"></i>
-                        </div>
-                        <input id="password" name="password" type="password" required 
-                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
-                    </div>
-                </div>
-                
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center">
-                        <input id="remember_me" name="remember" type="checkbox" 
-                               class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded">
-                        <label for="remember_me" class="ml-2 block text-sm text-gray-700">
-                            Remember me
-                        </label>
-                    </div>
-                    
-                    @if (Route::has('password.request'))
-                        <a href="{{ route('password.request') }}" class="text-sm font-medium text-primary-600 hover:text-primary-500">
-                            Forgot your password?
-                        </a>
-                    @endif
-                </div>
-                
-                <div>
-                    <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white gradient-bg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                        Sign in
-                    </button>
-                </div>
-            </form>
-            
-            <div class="mt-6 flex items-center justify-center">
-                <div class="text-sm">
-                    <span class="text-gray-500">Don't have an account?</span>
-                    @if (Route::has('register'))
-                        <a href="{{ route('register') }}" class="font-medium text-primary-600 hover:text-primary-500 ml-1">
-                            Register now
-                        </a>
-                    @endif
-                </div>
+        <div>
+            <label for="password" class="mb-1.5 block text-sm font-medium text-gray-800">Password</label>
+            <div class="relative">
+                <input id="password" name="password" type="password" required autocomplete="current-password"
+                       class="block w-full rounded-md border border-gray-300 px-3.5 py-3 pr-11 text-sm shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100">
+                <button type="button" data-toggle-password="password" aria-label="Show password"
+                        class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-gray-400 hover:text-gray-600"><i class="fas fa-eye"></i></button>
             </div>
         </div>
-        
-        <div class="mt-8 text-center text-sm text-gray-500">
-            &copy; {{ date('Y') }} {{ \App\Models\Setting::get('institution_name', 'Your School Name') }}. All rights reserved.
+
+        <div class="flex items-center justify-between text-sm">
+            <label class="flex items-center gap-2 text-gray-700">
+                <input type="checkbox" name="remember" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                Remember me
+            </label>
+            <a href="{{ route('password.request') }}" class="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-800">Forgot password</a>
         </div>
-    </div>
-</body>
-</html>
+
+        <button type="submit" class="flex w-full items-center justify-center rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:opacity-70">
+            Sign in
+        </button>
+
+        <a href="{{ route('student.login') }}" class="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50">
+            <i class="fas fa-child-reaching text-brand-600"></i> Pupil / parent sign in
+        </a>
+    </form>
+
+    <x-slot:footer>
+        No account yet? Ask the school administrator to create one for you.
+    </x-slot:footer>
+</x-auth-split>

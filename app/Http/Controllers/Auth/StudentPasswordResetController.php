@@ -35,7 +35,16 @@ class StudentPasswordResetController extends Controller
         $phone = $request->phone;
 
         // Find student by phone number
-        $student = Student::where('phone', $phone)->first();
+        // Pupils rarely have their own phone - the parent's number on file works too.
+        $local = substr(preg_replace('/\D/', '', $phone), -9);
+        $student = strlen($local) === 9
+            ? Student::where(fn ($q) => $q
+                    ->whereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$local}"])
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(emergency_contact_phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$local}"]))
+                ->whereHas('user')
+                ->first()
+            : null;
+        $phone = $student ? ($student->phone && str_ends_with(preg_replace('/\D/', '', $student->phone), $local) ? $student->phone : $student->emergency_contact_phone) : $phone;
 
         if (! $student) {
             return back()->withErrors(['phone' => 'No student account found with that phone number.'])->withInput();
@@ -144,7 +153,7 @@ class StudentPasswordResetController extends Controller
         }
 
         // Check expiry (60 minutes)
-        if (now()->diffInMinutes($record->created_at) > 60) {
+        if (\Illuminate\Support\Carbon::parse($record->created_at)->addMinutes(60)->isPast()) {
             DB::table('password_reset_tokens')->where('email', $request->email)->delete();
             return back()->withErrors(['token' => 'This password reset link has expired. Please request a new one.']);
         }

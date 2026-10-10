@@ -45,6 +45,8 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'phone',
+        'profile_photo',
         'password',
         'role',
         'student_id',
@@ -90,5 +92,38 @@ class User extends Authenticatable
     public function teacher()
     {
         return $this->belongsTo(Teacher::class);
+    }
+
+    /**
+     * The number a password-reset SMS goes to: the account's own phone, else the phone on the
+     * linked teacher record.
+     */
+    public function resetPhone(): ?string
+    {
+        return $this->phone ?: $this->teacher?->phone;
+    }
+
+    /**
+     * Find a staff account by phone number, ignoring spaces, dashes and the +233 / 0 prefix
+     * (so "024 123 4567", "0241234567" and "+233241234567" all match).
+     */
+    public static function findStaffByPhone(string $phone): ?self
+    {
+        $digits = preg_replace('/\D/', '', $phone);
+        $local = substr($digits, -9);
+
+        if (strlen($local) < 9) {
+            return null;
+        }
+
+        $normalise = fn (?string $value) => substr(preg_replace('/\D/', '', (string) $value), -9);
+
+        // Numbers are stored however they were typed ("024 123 4567", "+233..."), so compare
+        // digits in PHP; a school has few enough staff accounts for this to be instant.
+        return static::where('role', self::ROLE_ADMIN)
+            ->where(fn ($q) => $q->whereNotNull('phone')->orWhereHas('teacher', fn ($t) => $t->whereNotNull('phone')))
+            ->with('teacher')
+            ->get()
+            ->first(fn (self $user) => $normalise($user->resetPhone()) === $local);
     }
 }

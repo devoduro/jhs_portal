@@ -42,6 +42,12 @@
                                 <x-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required />
                             </div>
 
+                            <!-- Phone -->
+                            <div>
+                                <x-label for="phone" value="Mobile number (for password reset by SMS)" />
+                                <x-input id="phone" class="block mt-1 w-full" type="tel" name="phone" :value="old('phone')" placeholder="024 XXX XXXX" />
+                            </div>
+
                             <!-- Password -->
                             <div>
                                 <x-label for="password" :value="__('Password')" />

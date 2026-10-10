@@ -14,38 +14,70 @@ use Maatwebsite\Excel\Facades\Excel;
 class StudentFeeChargeController extends Controller
 {
     /**
-     * Display a listing of specific fee charges billed directly to students.
+     * Everything billed to pupils - term bills from the fee schedule and items billed to one
+     * pupil (bus fee, uniform, discounts) - with totals per fee item.
      */
     public function index(Request $request)
     {
-        $query = StudentFeeCharge::with(['student', 'academicYear', 'semester']);
+        $terms = \App\Models\Semester::with('academicYear')->get()
+            ->sortByDesc(fn ($t) => [$t->academicYear?->start_date?->timestamp ?? 0, $t->semester_number])->values();
+        $term = $request->has('semester_id')
+            ? $terms->firstWhere('id', (int) $request->semester_id)
+            : ($terms->firstWhere('is_current', true) ?? $terms->first());
 
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->whereHas('student', function ($q) use ($search) {
-                $q->where('full_name', 'like', "%{$search}%")
-                    ->orWhere('index_number', 'like', "%{$search}%");
-            });
-        }
+        $filtered = function () use ($request, $term) {
+            $query = StudentFeeCharge::query();
 
-        if ($request->filled('academic_year_id')) {
-            $query->where('academic_year_id', $request->academic_year_id);
-        }
+            if ($term) {
+                $query->where('semester_id', $term->id);
+            }
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->whereHas('student', fn ($q) => $q->where('full_name', 'like', "%{$search}%")->orWhere('index_number', 'like', "%{$search}%"));
+            }
+            if ($request->filled('class_group_id')) {
+                $query->whereHas('student', fn ($q) => $q->where('class_group_id', $request->class_group_id));
+            }
+            if ($request->input('type') === 'term') {
+                $query->where('notes', 'Term bill');
+            } elseif ($request->input('type') === 'individual') {
+                $query->where(fn ($q) => $q->whereNull('notes')->orWhere('notes', '!=', 'Term bill'));
+            } elseif ($request->input('type') === 'discount') {
+                $query->where('amount', '<', 0);
+            }
 
+            return $query;
+        };
+
+        // Totals per fee item for the chips (before the item filter narrows the list).
+        $categoryNames = FeeCategory::options();
+        $byCategory = $filtered()->selectRaw('category, COUNT(*) as n, SUM(amount) as total')->groupBy('category')->get()
+            ->map(fn ($row) => ['slug' => $row->category, 'name' => $categoryNames[$row->category] ?? ucfirst($row->category), 'count' => (int) $row->n, 'total' => (float) $row->total])
+            ->sortByDesc('total')->values();
+
+        $query = $filtered()->with(['student.classGroup', 'semester.academicYear', 'recordedBy']);
         if ($request->filled('category')) {
             $query->where('category', $request->category);
         }
 
-        $perPage = (int) $request->input('per_page', 20);
-        if (!in_array($perPage, [20, 50, 100, 200, 500], true)) {
-            $perPage = 20;
+        $summary = [
+            'total' => (float) (clone $query)->sum('amount'),
+            'items' => (clone $query)->count(),
+            'pupils' => (clone $query)->distinct('student_id')->count('student_id'),
+            'discounts' => (float) (clone $query)->where('amount', '<', 0)->sum('amount'),
+            'individual' => (clone $query)->where(fn ($q) => $q->whereNull('notes')->orWhere('notes', '!=', 'Term bill'))->count(),
+        ];
+
+        $perPage = (int) $request->input('per_page', 25);
+        if (!in_array($perPage, [25, 50, 100, 200], true)) {
+            $perPage = 25;
         }
 
-        $charges = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
-        $academicYears = AcademicYear::chronological()->get();
+        $charges = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($perPage)->withQueryString();
         $categories = FeeCategory::orderBy('name')->get();
+        $classGroups = \App\Models\ClassGroup::orderBy('level')->orderBy('name')->get();
 
-        return view('fees.charges.index', compact('charges', 'academicYears', 'categories'));
+        return view('fees.charges.index', compact('charges', 'categories', 'classGroups', 'terms', 'term', 'byCategory', 'summary'));
     }
 
     /**
@@ -136,10 +168,10 @@ class StudentFeeChargeController extends Controller
      */
     public function destroy(StudentFeeCharge $charge)
     {
+        $label = $charge->categoryLabel() . ' for ' . ($charge->student->full_name ?? 'pupil');
         $charge->delete();
 
-        return redirect()->route('fees.charges.index')
-            ->with('success', 'Fee charge removed successfully.');
+        return back()->with('success', "Removed {$label}.");
     }
 
     /**
@@ -153,13 +185,11 @@ class StudentFeeChargeController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return redirect()->route('fees.charges.index')
-                ->with('error', 'Select at least one record to delete.');
+            return back()->with('error', 'Tick at least one item to remove.');
         }
 
         $count = StudentFeeCharge::whereIn('id', $request->charge_ids)->delete();
 
-        return redirect()->route('fees.charges.index')
-            ->with('success', "Deleted {$count} fee charge record(s).");
+        return back()->with('success', "Removed {$count} billed item(s).");
     }
 }

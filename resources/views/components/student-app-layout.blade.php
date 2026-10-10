@@ -157,7 +157,7 @@
         </aside>
 
         <!-- Main Content -->
-        <div class="flex-1 flex flex-col min-h-screen">
+        <div class="flex-1 flex flex-col min-h-screen min-w-0">
             <!-- Top Navigation -->
             <header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
                 <div class="flex items-center justify-between h-16 px-4 md:px-6">
@@ -254,7 +254,7 @@
             </header>
             
             <!-- Page Content -->
-            <main class="flex-1 flex flex-col px-4 md:px-6 py-4">
+            <main class="flex-1 flex flex-col min-w-0 px-4 md:px-6 py-4">
                 <!-- Flash Messages -->
                 @if (session('success'))
                     <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)" class="p-3 bg-green-50 border-l-4 border-green-500 text-green-700 flex justify-between items-center">

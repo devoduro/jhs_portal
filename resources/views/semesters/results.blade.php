@@ -6,7 +6,7 @@
             </h2>
             <div class="flex space-x-2">
                 <x-button href="{{ route('semesters.show', $semester) }}" variant="secondary" icon="fas fa-eye">
-                    {{ __('View Semester') }}
+                    {{ __('Back to Term') }}
                 </x-button>
                 <x-button href="{{ route('semesters.index') }}" variant="secondary" icon="fas fa-arrow-left">
                     {{ __('Back to Semesters') }}

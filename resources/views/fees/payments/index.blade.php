@@ -1,136 +1,189 @@
-<x-app-layout>
-    <x-slot name="header">
-        <div class="flex flex-wrap justify-between items-center gap-3">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">{{ __('Pupil Fees') }}</h2>
-            <div class="flex flex-wrap gap-2">
-                <x-button href="{{ route('fees.export.excel', request()->query()) }}" variant="secondary" icon="fas fa-file-excel">Excel</x-button>
-                <x-button href="{{ route('fees.export.pdf', request()->query()) }}" variant="secondary" icon="fas fa-file-pdf">PDF</x-button>
-                <x-button href="{{ route('fees.report', ['semester_id' => $term?->id]) }}" variant="secondary" icon="fas fa-chart-pie">Collection Report</x-button>
-            </div>
-        </div>
-    </x-slot>
+@extends('components.app-layout')
 
-    <div class="py-8">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
-            <!-- Summary -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="bg-white shadow-sm rounded-lg p-4">
-                    <p class="text-xs uppercase text-gray-500">Billed this term</p>
-                    <p class="text-xl font-bold text-gray-900">GH₵ {{ number_format($summary['billed'], 2) }}</p>
-                </div>
-                <div class="bg-white shadow-sm rounded-lg p-4">
-                    <p class="text-xs uppercase text-gray-500">Collected this term</p>
-                    <p class="text-xl font-bold text-green-600">GH₵ {{ number_format($summary['paid'], 2) }}</p>
-                </div>
-                <div class="bg-white shadow-sm rounded-lg p-4">
-                    <p class="text-xs uppercase text-gray-500">Total outstanding</p>
-                    <p class="text-xl font-bold text-red-600">GH₵ {{ number_format($summary['outstanding'], 2) }}</p>
-                </div>
-                <div class="bg-white shadow-sm rounded-lg p-4">
-                    <p class="text-xs uppercase text-gray-500">Pupils owing</p>
-                    <p class="text-xl font-bold text-gray-900">{{ $summary['debtors'] }}</p>
-                </div>
-            </div>
+@section('title', 'Pupil Fees')
+@section('subtitle', $term ? $term->full_name : 'No term selected')
 
-            <!-- Filters -->
-            <form method="GET" action="{{ route('fees.index') }}" class="bg-white shadow-sm rounded-lg p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
-                <div class="col-span-2">
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Search pupil</label>
-                    <input type="text" name="search" value="{{ request('search') }}" placeholder="Name or admission no." class="w-full rounded-lg border-gray-300 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Term</label>
-                    <select name="semester_id" class="w-full rounded-lg border-gray-300 text-sm">
-                        @foreach($terms as $t)
-                            <option value="{{ $t->id }}" @selected($term && $term->id === $t->id)>{{ $t->full_name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Class</label>
-                    <select name="class_group_id" class="w-full rounded-lg border-gray-300 text-sm">
-                        <option value="">All classes</option>
-                        @foreach($classGroups as $classGroup)
-                            <option value="{{ $classGroup->id }}" @selected(request('class_group_id') == $classGroup->id)>{{ $classGroup->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select name="status" class="w-full rounded-lg border-gray-300 text-sm">
-                        <option value="">All pupils</option>
-                        <option value="debtors" @selected(request('status') === 'debtors')>Owing</option>
-                        <option value="settled" @selected(request('status') === 'settled')>Fully paid</option>
-                        <option value="creditors" @selected(request('status') === 'creditors')>In credit</option>
-                    </select>
-                </div>
-                <div class="flex gap-2">
-                    <x-button type="submit" icon="fas fa-filter">Filter</x-button>
-                    <x-button href="{{ route('fees.index') }}" variant="secondary">Reset</x-button>
-                </div>
-            </form>
+@section('content')
+@php
+    $money = fn ($v) => 'GH₵ ' . number_format((float) $v, 2);
+    $query = request()->except('page');
+    $tabUrl = fn ($status) => route('fees.index', array_filter(array_merge($query, ['status' => $status])));
+    $currentStatus = request('status', '');
+    $selectedClass = $classGroups->firstWhere('id', (int) request('class_group_id'));
+@endphp
 
-            <!-- List -->
-            <div class="bg-white shadow-sm rounded-lg overflow-hidden">
-                <form method="POST" action="{{ route('fees.reminders') }}">
-                    @csrf
-                    <div class="px-4 py-3 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2">
-                        <p class="text-sm text-gray-600">{{ $students->total() }} pupil(s){{ $term ? ' — ' . $term->full_name : '' }}</p>
-                        @can('send-sms')
-                            <x-button type="submit" size="sm" variant="outline-primary" icon="fas fa-sms" onclick="return confirm('Send an SMS balance reminder to the parents of the ticked pupils?')">
-                                SMS reminder to ticked
-                            </x-button>
-                        @endcan
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-3 py-3"><input type="checkbox" onclick="document.querySelectorAll('.pupil-box').forEach(b => b.checked = this.checked)" class="rounded border-gray-300" title="Tick all pupils owing"></th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pupil</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Bal. b/f</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Term Bill</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid (Term)</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>
-                                    <th class="px-4 py-3"></th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                @forelse($students as $row)
-                                    @php $student = $row['student']; @endphp
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-3 py-3 text-center">
-                                            @if($row['status'] === 'debtor')
-                                                <input type="checkbox" name="student_ids[]" value="{{ $student->id }}" class="pupil-box rounded border-gray-300">
-                                            @endif
-                                        </td>
-                                        <td class="px-4 py-3">
-                                            <a href="{{ route('fees.show', ['student' => $student, 'semester_id' => $term?->id]) }}" class="font-medium text-gray-900 hover:text-primary-600">{{ $student->full_name }}</a>
-                                            <div class="text-xs text-gray-500">{{ $student->index_number }}</div>
-                                        </td>
-                                        <td class="px-4 py-3 text-gray-600">{{ $student->classGroup->name ?? \App\Support\FormLabel::label($student->level) }}</td>
-                                        <td class="px-4 py-3 text-right {{ $row['brought_forward'] > 0 ? 'text-red-600' : 'text-gray-600' }}">{{ number_format($row['brought_forward'], 2) }}</td>
-                                        <td class="px-4 py-3 text-right text-gray-900">{{ $row['term_bill'] > 0 ? number_format($row['term_bill'], 2) : '—' }}</td>
-                                        <td class="px-4 py-3 text-right text-green-600">{{ number_format($row['term_paid'], 2) }}</td>
-                                        <td class="px-4 py-3 text-right font-semibold {{ $row['status'] === 'debtor' ? 'text-red-600' : ($row['status'] === 'creditor' ? 'text-blue-600' : 'text-green-600') }}">
-                                            {{ number_format($row['balance'], 2) }}
-                                        </td>
-                                        <td class="px-4 py-3 text-right whitespace-nowrap">
-                                            <a href="{{ route('fees.show', ['student' => $student, 'semester_id' => $term?->id]) }}" class="inline-flex items-center px-3 py-1 rounded-lg bg-primary-600 text-white text-xs hover:bg-primary-700">
-                                                <i class="fas fa-cash-register mr-1"></i> Receive
-                                            </a>
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr><td colspan="8" class="px-4 py-10 text-center text-gray-400">No pupils match these filters.</td></tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </form>
-                <div class="px-4 py-3">{{ $students->links() }}</div>
-            </div>
-        </div>
+<div class="space-y-6">
+    <!-- Hero -->
+    <x-dashboard-hero title="Pupil Fees" :eyebrow="$term ? $term->full_name : 'No term selected'"
+        :subtitle="$selectedClass ? 'Showing ' . $selectedClass->name . ' — find a pupil to receive a payment.' : 'Find a pupil to receive a payment, or follow up on balances.'">
+        <x-slot:chips>
+            <span><i class="fas fa-user-graduate"></i> {{ number_format($statusCounts['all']) }} pupils</span>
+            <span><i class="fas fa-chart-pie"></i> {{ $summary['rate'] }}% of term bills collected</span>
+            <span><i class="fas fa-coins"></i> {{ $money($summary['today']) }} collected today</span>
+        </x-slot:chips>
+        <a class="primary" href="{{ route('fees.report', ['semester_id' => $term?->id]) }}"><i class="fas fa-chart-pie text-[#42a5dc]"></i> Collection Report</a>
+        <a href="{{ route('fees.export.excel', request()->query()) }}"><i class="fas fa-file-excel"></i> Excel</a>
+        <a href="{{ route('fees.export.pdf', request()->query()) }}"><i class="fas fa-file-pdf"></i> PDF</a>
+    </x-dashboard-hero>
+
+    <!-- Tiles -->
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <x-stat-tile color="blue" icon="fa-file-invoice" title="Billed This Term" :sub="$summary['pupils'] . ' pupil(s) shown'" :value="$money($summary['billed'])"
+            :href="$term ? route('fees.billing', ['semester_id' => $term->id]) : null" />
+        <x-stat-tile color="green" icon="fa-sack-dollar" title="Collected This Term" sub="Payments against this term" :value="$money($summary['paid'])"
+            :badge="$summary['rate'] . '% collected'" :href="route('fees.report', ['semester_id' => $term?->id])" />
+        <x-stat-tile color="red" icon="fa-circle-exclamation" title="Still Owed" sub="All terms, pupils shown" :value="$money($summary['outstanding'])"
+            :href="$tabUrl('debtors')" />
+        <x-stat-tile color="orange" icon="fa-users" title="Pupils Owing" :sub="$statusCounts['settled'] . ' fully paid • ' . $statusCounts['creditor'] . ' in credit'"
+            :value="number_format($statusCounts['debtor'])" :href="$tabUrl('debtors')" />
     </div>
-</x-app-layout>
+
+    <!-- Filters -->
+    <form method="GET" action="{{ route('fees.index') }}" class="rounded-md bg-white p-4 shadow-sm ring-1 ring-gray-100">
+        <input type="hidden" name="status" value="{{ $currentStatus }}">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">
+            <div class="md:col-span-5">
+                <label class="mb-1 block text-xs font-medium text-gray-600">Find a pupil</label>
+                <div class="relative">
+                    <i class="fas fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    <input type="text" name="search" value="{{ request('search') }}" placeholder="Name or admission no. — one match opens their account" autofocus
+                           class="w-full rounded-md border-gray-300 pl-9 text-sm focus:border-[#42a5dc] focus:ring-[#42a5dc]">
+                </div>
+            </div>
+            <div class="md:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-gray-600">Term</label>
+                <select name="semester_id" class="w-full rounded-md border-gray-300 text-sm" onchange="this.form.submit()">
+                    @foreach($terms as $t)
+                        <option value="{{ $t->id }}" @selected($term && $term->id === $t->id)>{{ $t->full_name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-gray-600">Class</label>
+                <select name="class_group_id" class="w-full rounded-md border-gray-300 text-sm" onchange="this.form.submit()">
+                    <option value="">All classes</option>
+                    @foreach($classGroups as $classGroup)
+                        <option value="{{ $classGroup->id }}" @selected(request('class_group_id') == $classGroup->id)>{{ $classGroup->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-gray-600">Sort by</label>
+                <select name="sort" class="w-full rounded-md border-gray-300 text-sm" onchange="this.form.submit()">
+                    <option value="">Class, then name</option>
+                    <option value="balance" @selected(request('sort') === 'balance')>Highest balance first</option>
+                    <option value="paid" @selected(request('sort') === 'paid')>Most paid this term</option>
+                </select>
+            </div>
+            <div class="flex gap-2 md:col-span-1">
+                <button type="submit" class="flex-1 rounded-md bg-[#42a5dc] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2c8fc6]" title="Search"><i class="fas fa-filter"></i></button>
+                <a href="{{ route('fees.index') }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-600 hover:bg-gray-200" title="Reset"><i class="fas fa-rotate-left"></i></a>
+            </div>
+        </div>
+    </form>
+
+    <!-- List -->
+    <div class="overflow-hidden rounded-md bg-white shadow-sm ring-1 ring-gray-100">
+        <form method="POST" action="{{ route('fees.reminders') }}">
+            @csrf
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                <!-- Status tabs -->
+                <div class="flex flex-wrap gap-1.5 text-sm">
+                    @foreach(['' => ['All', 'all', 'bg-[#5b6f8f]'], 'debtors' => ['Owing', 'debtor', 'bg-[#da4453]'], 'settled' => ['Fully paid', 'settled', 'bg-[#8cc152]'], 'creditors' => ['In credit', 'creditor', 'bg-[#967adc]']] as $value => [$label, $key, $color])
+                        <a href="{{ $tabUrl($value) }}"
+                           class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-medium transition {{ $currentStatus === $value ? $color . ' text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
+                            {{ $label }}
+                            <span class="rounded-full px-1.5 text-xs {{ $currentStatus === $value ? 'bg-white/25' : 'bg-white text-gray-500' }}">{{ $statusCounts[$key] }}</span>
+                        </a>
+                    @endforeach
+                </div>
+                @can('send-sms')
+                    <button type="submit" class="inline-flex items-center gap-2 rounded-md border border-[#42a5dc] px-3 py-1.5 text-sm font-semibold text-[#2c8fc6] hover:bg-[#42a5dc]/10"
+                            onclick="const n=document.querySelectorAll('.pupil-box:checked').length; if(!n){alert('Tick the pupils whose parents should get a reminder.'); return false;} return confirm('Send an SMS balance reminder to ' + n + ' parent(s)?')">
+                        <i class="fas fa-sms"></i> SMS reminder to ticked
+                    </button>
+                @endcan
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-100 text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="w-10 px-4 py-3"><input type="checkbox" onclick="document.querySelectorAll('.pupil-box').forEach(b => b.checked = this.checked)" class="rounded border-gray-300" title="Tick all pupils owing"></th>
+                            <th class="px-4 py-3 text-left font-medium">Pupil</th>
+                            <th class="px-4 py-3 text-right font-medium">Bal. b/f</th>
+                            <th class="px-4 py-3 text-right font-medium">Term bill</th>
+                            <th class="w-48 px-4 py-3 text-left font-medium">Paid this term</th>
+                            <th class="px-4 py-3 text-right font-medium">Balance</th>
+                            <th class="px-4 py-3"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @forelse($students as $row)
+                            @php
+                                $student = $row['student'];
+                                $due = max(0, $row['term_bill'] + max(0, $row['brought_forward']));
+                                $pct = $due > 0 ? min(100, round($row['term_paid'] / $due * 100)) : ($row['balance'] <= 0.009 ? 100 : 0);
+                                $badge = ['debtor' => ['Owing', 'bg-red-50 text-red-700 ring-red-100'], 'creditor' => ['In credit', 'bg-purple-50 text-purple-700 ring-purple-100'], 'settled' => ['Paid', 'bg-green-50 text-green-700 ring-green-100']][$row['status']];
+                            @endphp
+                            <tr class="group hover:bg-[#42a5dc]/5">
+                                <td class="px-4 py-3 text-center">
+                                    @if($row['status'] === 'debtor')
+                                        <input type="checkbox" name="student_ids[]" value="{{ $student->id }}" class="pupil-box rounded border-gray-300">
+                                    @endif
+                                </td>
+                                <td class="px-4 py-3">
+                                    <a href="{{ route('fees.show', ['student' => $student, 'semester_id' => $term?->id]) }}" class="flex items-center gap-3">
+                                        <x-student-photo :student="$student" class="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-white" />
+                                        <span class="min-w-0">
+                                            <span class="block truncate font-medium text-gray-900 group-hover:text-[#2c8fc6]">{{ $student->full_name }}</span>
+                                            <span class="block truncate text-xs text-gray-500">{{ $student->index_number }} • {{ $student->classGroup->name ?? \App\Support\FormLabel::label($student->level) }}</span>
+                                        </span>
+                                    </a>
+                                </td>
+                                <td class="whitespace-nowrap px-4 py-3 text-right {{ $row['brought_forward'] > 0.009 ? 'text-red-600' : 'text-gray-400' }}">{{ number_format($row['brought_forward'], 2) }}</td>
+                                <td class="whitespace-nowrap px-4 py-3 text-right text-gray-700">
+                                    @if($row['term_bill'] > 0)
+                                        {{ number_format($row['term_bill'], 2) }}
+                                    @else
+                                        <span class="rounded bg-yellow-50 px-1.5 py-0.5 text-xs text-yellow-700">Not billed</span>
+                                    @endif
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-2">
+                                        <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                                            <div class="h-2 rounded-full {{ $pct >= 100 ? 'bg-[#8cc152]' : ($pct >= 50 ? 'bg-[#42a5dc]' : 'bg-[#f5922f]') }}" style="width: {{ $pct }}%"></div>
+                                        </div>
+                                        <span class="w-20 whitespace-nowrap text-right text-xs font-medium text-gray-700">{{ number_format($row['term_paid'], 2) }}</span>
+                                    </div>
+                                </td>
+                                <td class="whitespace-nowrap px-4 py-3 text-right">
+                                    <span class="block font-semibold {{ $row['status'] === 'debtor' ? 'text-red-600' : ($row['status'] === 'creditor' ? 'text-purple-600' : 'text-green-600') }}">{{ number_format(abs($row['balance']), 2) }}</span>
+                                    <span class="mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 {{ $badge[1] }}">{{ $badge[0] }}</span>
+                                </td>
+                                <td class="whitespace-nowrap px-4 py-3 text-right">
+                                    <a href="{{ route('fees.show', ['student' => $student, 'semester_id' => $term?->id]) }}"
+                                       class="inline-flex items-center gap-1.5 rounded-md bg-[#8cc152] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#74a83b]">
+                                        <i class="fas fa-cash-register"></i> Receive
+                                    </a>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="7" class="px-4 py-16 text-center">
+                                    <i class="fas fa-magnifying-glass mb-3 block text-3xl text-gray-300"></i>
+                                    <p class="font-medium text-gray-600">No pupils match these filters.</p>
+                                    <a href="{{ route('fees.index') }}" class="mt-1 inline-block text-sm text-[#2c8fc6] hover:underline">Clear filters</a>
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </form>
+        @if($students->hasPages())
+            <div class="border-t border-gray-100 px-4 py-3">{{ $students->links() }}</div>
+        @endif
+    </div>
+</div>
+@endsection

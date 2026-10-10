@@ -1,147 +1,35 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+<x-auth-split title="Set a new password" subtitle="Choose a password you haven't used here before — at least 8 characters." page-title="New password">
+    <form method="POST" action="{{ route('password.update') }}" class="space-y-5" data-auth-form>
+        @csrf
+        <input type="hidden" name="token" value="{{ $token }}">
 
-    <title>{{ config('app.name', 'Transcript System') }} - Reset Password</title>
+        <div>
+            <label for="email" class="mb-1.5 block text-sm font-medium text-gray-800">Email address</label>
+            <input id="email" name="email" type="email" value="{{ $email ?? old('email') }}" required autocomplete="username" {{ ($email ?? null) ? 'readonly' : 'autofocus' }}
+                   class="block w-full rounded-md border border-gray-300 px-3.5 py-3 text-sm shadow-sm read-only:bg-gray-50 read-only:text-gray-500 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100">
+        </div>
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: {
-                            50: '#f0f9ff',
-                            100: '#e0f2fe',
-                            200: '#bae6fd',
-                            300: '#7dd3fc',
-                            400: '#38bdf8',
-                            500: '#0ea5e9',
-                            600: '#0284c7',
-                            700: '#0369a1',
-                            800: '#075985',
-                            900: '#0c4a6e',
-                        },
-                    },
-                    fontFamily: {
-                        sans: ['Poppins', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
-    <style>
-        [x-cloak] { display: none !important; }
-        
-        .gradient-bg {
-            background: linear-gradient(135deg, #0ea5e9 0%, #075985 100%);
-        }
-        
-        .gradient-text {
-            background: linear-gradient(135deg, #0ea5e9 0%, #075985 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-    </style>
-</head>
-<body class="font-sans antialiased bg-gray-50">
-    <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0">
-        <div class="w-full sm:max-w-md mt-6 px-6 py-4 bg-white shadow-md overflow-hidden sm:rounded-lg">
-            <div class="flex justify-center mb-8">
-                <div class="text-center">
-                    <h1 class="text-3xl font-bold gradient-text mb-1">Reset Password</h1>
-                    <p class="text-gray-500 text-sm">Create a new password for your account</p>
-                </div>
-            </div>
-            
-            @if ($errors->any())
-                <div class="mb-4">
-                    <div class="font-medium text-red-600">
-                        {{ __('Whoops! Something went wrong.') }}
-                    </div>
-
-                    <ul class="mt-3 list-disc list-inside text-sm text-red-600">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
-            
-            <form method="POST" action="{{ route('password.update') }}" class="space-y-6">
-                @csrf
-                
-                <input type="hidden" name="token" value="{{ $token }}">
-                
-                <div>
-                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
-                    <div class="mt-1 relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-envelope text-gray-400"></i>
-                        </div>
-                        <input id="email" name="email" type="email" value="{{ $email ?? old('email') }}" required autofocus 
-                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
-                    </div>
-                </div>
-                
-                <div>
-                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                    <div class="mt-1 relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-lock text-gray-400"></i>
-                        </div>
-                        <input id="password" name="password" type="password" required 
-                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
-                    </div>
-                </div>
-                
-                <div>
-                    <label for="password_confirmation" class="block text-sm font-medium text-gray-700">Confirm Password</label>
-                    <div class="mt-1 relative rounded-md shadow-sm">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-lock text-gray-400"></i>
-                        </div>
-                        <input id="password_confirmation" name="password_confirmation" type="password" required 
-                               class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
-                    </div>
-                </div>
-                
-                <div>
-                    <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white gradient-bg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
-                        Reset Password
-                    </button>
-                </div>
-            </form>
-            
-            <div class="mt-6 flex items-center justify-center">
-                <div class="text-sm">
-                    <a href="{{ route('login') }}" class="font-medium text-primary-600 hover:text-primary-500">
-                        <i class="fas fa-arrow-left mr-1"></i> Back to login
-                    </a>
-                </div>
+        <div>
+            <label for="password" class="mb-1.5 block text-sm font-medium text-gray-800">New password</label>
+            <div class="relative">
+                <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" {{ ($email ?? null) ? 'autofocus' : '' }}
+                       class="block w-full rounded-md border border-gray-300 px-3.5 py-3 pr-11 text-sm shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100">
+                <button type="button" data-toggle-password="password" aria-label="Show password" class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-gray-400 hover:text-gray-600"><i class="fas fa-eye"></i></button>
             </div>
         </div>
-        
-        <div class="mt-8 text-center text-sm text-gray-500">
-            &copy; {{ date('Y') }} {{ \App\Models\Setting::get('institution_name', 'Your School Name') }}. All rights reserved.
+
+        <div>
+            <label for="password_confirmation" class="mb-1.5 block text-sm font-medium text-gray-800">Confirm new password</label>
+            <input id="password_confirmation" name="password_confirmation" type="password" required minlength="8" autocomplete="new-password"
+                   class="block w-full rounded-md border border-gray-300 px-3.5 py-3 text-sm shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100">
         </div>
-    </div>
-</body>
-</html>
+
+        <button type="submit" class="flex w-full items-center justify-center rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:opacity-70">
+            Save new password
+        </button>
+    </form>
+
+    <x-slot:footer>
+        <a href="{{ route('login') }}" class="font-medium text-brand-600 hover:text-brand-800"><i class="fas fa-arrow-left mr-1"></i> Back to sign in</a>
+    </x-slot:footer>
+</x-auth-split>

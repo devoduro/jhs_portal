@@ -27,9 +27,18 @@ use PDF;
  */
 class StudentPaymentController extends Controller
 {
+    /** Pupils per fee status (all / owing / paid / in credit) from the last buildFeeRows() call. */
+    private array $statusCounts = ['all' => 0, 'debtor' => 0, 'settled' => 0, 'creditor' => 0];
+
     public function index(Request $request)
     {
         [$term, $rows] = $this->buildFeeRows($request);
+
+        // Searching for one pupil (e.g. from the dashboard "Find a pupil" box) goes straight to
+        // their account, ready to receive a payment.
+        if ($request->filled('search') && $rows->count() === 1 && !$request->filled('page')) {
+            return redirect()->route('fees.show', ['student' => $rows->first()['student'], 'semester_id' => $term?->id]);
+        }
 
         $terms = $this->terms();
         $classGroups = ClassGroup::orderBy('level')->orderBy('name')->get();
@@ -39,7 +48,12 @@ class StudentPaymentController extends Controller
             'paid' => $rows->sum('term_paid'),
             'outstanding' => $rows->sum(fn ($r) => max($r['balance'], 0)),
             'debtors' => $rows->where('status', 'debtor')->count(),
+            'pupils' => $rows->count(),
+            'today' => (float) StudentPayment::whereDate('payment_date', today())->sum('amount'),
+            'todayCount' => StudentPayment::whereDate('payment_date', today())->count(),
         ];
+        $summary['rate'] = $summary['billed'] > 0 ? round($summary['paid'] / $summary['billed'] * 100, 1) : 0;
+        $statusCounts = $this->statusCounts;
 
         $perPage = 25;
         $page = LengthAwarePaginator::resolveCurrentPage();
@@ -52,7 +66,7 @@ class StudentPaymentController extends Controller
             ['path' => $request->url(), 'query' => $request->except('page')]
         );
 
-        return view('fees.payments.index', compact('students', 'term', 'terms', 'classGroups', 'summary'));
+        return view('fees.payments.index', compact('students', 'term', 'terms', 'classGroups', 'summary', 'statusCounts'));
     }
 
     public function exportExcel(Request $request)
@@ -129,6 +143,14 @@ class StudentPaymentController extends Controller
             ];
         });
 
+        // Counts for the status tabs, before the status filter narrows the list.
+        $this->statusCounts = [
+            'all' => $rows->count(),
+            'debtor' => $rows->where('status', 'debtor')->count(),
+            'settled' => $rows->where('status', 'settled')->count(),
+            'creditor' => $rows->where('status', 'creditor')->count(),
+        ];
+
         if ($request->filled('status')) {
             $wanted = rtrim($request->status, 's');
             $rows = $rows->filter(fn (array $r) => $r['status'] === $wanted);
@@ -136,6 +158,8 @@ class StudentPaymentController extends Controller
 
         if ($request->input('sort') === 'balance') {
             $rows = $rows->sortByDesc('balance');
+        } elseif ($request->input('sort') === 'paid') {
+            $rows = $rows->sortByDesc('term_paid');
         }
 
         return [$term, $rows->values()];
@@ -304,6 +328,7 @@ class StudentPaymentController extends Controller
     {
         $data = $this->reportData($request);
         $data['terms'] = $this->terms();
+        $data['classLookup'] = ClassGroup::all()->keyBy('name');
 
         return view('fees.report', $data);
     }
@@ -333,72 +358,15 @@ class StudentPaymentController extends Controller
         $rows = collect();
         $items = collect();
         $methods = collect();
-        $daily = collect();
         $grand = ['pupils' => 0, 'billed' => 0.0, 'collected' => 0.0, 'outstanding' => 0.0];
 
         if ($term) {
-            $classGroups = ClassGroup::orderBy('level')->orderBy('name')->get();
-            $students = Student::where('status', 'active')->get(['id', 'class_group_id', 'level']);
-
-            $billed = StudentFeeCharge::where('semester_id', $term->id)
-                ->selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
-            $collected = StudentPayment::where('semester_id', $term->id)
-                ->selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
-
-            // Overall outstanding (all terms + arrears) per pupil, for the "still owing" column.
-            $allCharges = StudentFeeCharge::selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
-            $allPaid = StudentPayment::selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
-            $allArrears = StudentArrear::selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
-
-            $groups = $classGroups->map(fn ($c) => ['label' => $c->name, 'level' => $c->level, 'ids' => $students->where('class_group_id', $c->id)->pluck('id')]);
-            $unplaced = $students->whereNull('class_group_id')->pluck('id');
-            if ($unplaced->isNotEmpty()) {
-                $groups->push(['label' => 'Not in a class', 'level' => null, 'ids' => $unplaced]);
-            }
-
-            foreach ($groups as $group) {
-                if ($group['ids']->isEmpty()) {
-                    continue;
-                }
-
-                $b = $group['ids']->sum(fn ($id) => (float) ($billed[$id] ?? 0));
-                $c = $group['ids']->sum(fn ($id) => (float) ($collected[$id] ?? 0));
-                $o = $group['ids']->sum(fn ($id) => max(0, (float) ($allCharges[$id] ?? 0) + (float) ($allArrears[$id] ?? 0) - (float) ($allPaid[$id] ?? 0)));
-                $debtors = $group['ids']->filter(fn ($id) => (float) ($allCharges[$id] ?? 0) + (float) ($allArrears[$id] ?? 0) - (float) ($allPaid[$id] ?? 0) > 0.009)->count();
-
-                $rows->push([
-                    'class' => $group['label'],
-                    'level' => $group['level'],
-                    'pupils' => $group['ids']->count(),
-                    'debtors' => $debtors,
-                    'billed' => $b,
-                    'collected' => $c,
-                    'outstanding' => $o,
-                    'percentage' => $b > 0 ? round($c / $b * 100, 1) : 0,
-                ]);
-
-                $grand['pupils'] += $group['ids']->count();
-                $grand['billed'] += $b;
-                $grand['collected'] += $c;
-                $grand['outstanding'] += $o;
-            }
-
-            $categoryNames = FeeCategory::options();
-            $items = StudentFeeCharge::where('semester_id', $term->id)
-                ->selectRaw('category, COUNT(DISTINCT student_id) as pupils, SUM(amount) as total')
-                ->groupBy('category')->get()
-                ->map(fn ($row) => ['item' => $categoryNames[$row->category] ?? ucfirst($row->category), 'pupils' => $row->pupils, 'total' => (float) $row->total]);
-
-            $methods = StudentPayment::where('semester_id', $term->id)
-                ->selectRaw('payment_method, COUNT(*) as count, SUM(amount) as total')
-                ->groupBy('payment_method')->get()
-                ->map(fn ($row) => ['method' => StudentPayment::METHODS[$row->payment_method] ?? $row->payment_method, 'count' => $row->count, 'total' => (float) $row->total]);
+            ['rows' => $rows, 'grand' => $grand] = \App\Services\FeeReportService::byClass($term);
+            $items = \App\Services\FeeReportService::byItem($term);
+            $methods = \App\Services\FeeReportService::byMethod($term);
         }
 
-        $daily = StudentPayment::whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
-            ->selectRaw('payment_date, COUNT(*) as count, SUM(amount) as total')
-            ->groupBy('payment_date')->orderBy('payment_date')->get()
-            ->map(fn ($row) => ['date' => \Carbon\Carbon::parse($row->payment_date), 'count' => $row->count, 'total' => (float) $row->total]);
+        $daily = \App\Services\FeeReportService::daily($from, $to);
 
         $payments = StudentPayment::with(['student.classGroup', 'recordedBy'])
             ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])

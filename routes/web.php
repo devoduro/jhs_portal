@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\ArrearsController;
-use App\Http\Controllers\BulkResultController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FeeStructureController;
@@ -27,14 +26,14 @@ Route::middleware('guest')->group(function () {
 
     // Student Password Reset (via SMS)
     Route::get('student/forgot-password', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'showRequestForm'])->name('student.password.request');
-    Route::post('student/forgot-password', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'sendResetLink'])->name('student.password.email');
-    Route::post('student/forgot-password/email', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'sendResetLinkByEmail'])->name('student.password.email-request');
+    Route::post('student/forgot-password', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'sendResetLink'])->middleware('throttle:5,1')->name('student.password.email');
+    Route::post('student/forgot-password/email', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'sendResetLinkByEmail'])->middleware('throttle:5,1')->name('student.password.email-request');
     Route::get('student/reset-password/{token}', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'showResetForm'])->name('student.password.reset');
     Route::post('student/reset-password', [\App\Http\Controllers\Auth\StudentPasswordResetController::class, 'reset'])->name('student.password.update');
     
     // Password Reset
     Route::get('password/reset', [\App\Http\Controllers\Auth\ForgotPasswordController::class, 'showLinkRequestForm'])->name('password.request');
-    Route::post('password/email', [\App\Http\Controllers\Auth\ForgotPasswordController::class, 'sendResetLinkEmail'])->name('password.email');
+    Route::post('password/email', [\App\Http\Controllers\Auth\ForgotPasswordController::class, 'sendResetLinkEmail'])->middleware('throttle:5,1')->name('password.email');
     Route::get('password/reset/{token}', [\App\Http\Controllers\Auth\ResetPasswordController::class, 'showResetForm'])->name('password.reset');
     Route::post('password/reset', [\App\Http\Controllers\Auth\ResetPasswordController::class, 'reset'])->name('password.update');
 });
@@ -80,6 +79,9 @@ Route::middleware(['auth'])->group(function () {
     // route) - sharing that name made route('password.update') always resolve to whichever was
     // registered last, breaking whichever feature's form needed the other one.
     Route::put('/password/update', [\App\Http\Controllers\PasswordController::class, 'update'])->name('password.change.update');
+
+    // Top-bar live pupil search (access checked in the controller)
+    Route::get('/search/pupils', \App\Http\Controllers\PupilSearchController::class)->name('search.pupils');
 
     // User Profile
     Route::get('/profile', [UserController::class, 'profile'])->name('profile');
@@ -148,25 +150,17 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('departments', \App\Http\Controllers\DepartmentController::class)->except(['show']);
     });
 
-    // Results Management - creating/editing/deleting a result requires manage-results (Exams
-    // Officer / Admin); a Teacher only has view-results, so they can see results for their own
-    // subjects/students (already scoped in ResultController via ScopesToLecturer) but not add,
-    // edit, delete, or bulk-upload any. This mutation group is registered first, and the
-    // filter/search literal paths in the view group below are registered before that group's
-    // /results/{result} (show) wildcard - otherwise e.g. /results/create or /results/search
-    // would be swallowed by show() with {result}='create'/'search' and 404 via failed model
-    // binding (this was already happening for /results/search before this restructuring).
-    Route::middleware('permission:manage-results')->group(function () {
-        Route::resource('results', ResultController::class)->only(['create', 'store', 'edit', 'update', 'destroy']);
-
-        // Bulk Upload Results (teacher-scoped, per-subject entry point - distinct from
-        // BulkResultController's /bulkresults/upload below, which is a separate admin-facing
-        // flow. These used to collide on the same URI, which silently dropped this route
-        // entirely from Laravel's name-lookup table since it dedupes by method+URI.
+    // Results: scores are entered and changed on the class score sheet (/scores). The old
+    // add/edit/bulk-upload URLs below only redirect there, so anyone who may enter scores can
+    // follow them; deleting a score is limited to manage-results. These literal paths are
+    // registered before the /results/{result} wildcard further down.
+    Route::middleware('permission:enter-scores|manage-results')->group(function () {
+        Route::resource('results', ResultController::class)->only(['create', 'store', 'edit', 'update']);
         Route::get('/results/bulk-upload', [ResultController::class, 'bulkCreate'])->name('results.bulk-create');
         Route::post('/results/bulk-store', [ResultController::class, 'bulkStore'])->name('results.bulk-store');
         Route::get('/bulkresults/download-template', [ResultController::class, 'downloadTemplate'])->name('results.download-template');
     });
+    Route::delete('/results/{result}', [ResultController::class, 'destroy'])->middleware('permission:manage-results')->name('results.destroy');
 
     Route::middleware('permission:manage-results|view-results|enter-scores|manage-term-reports')->group(function () {
         Route::get('/results/search', [ResultController::class, 'search'])->name('results.search');
@@ -191,6 +185,13 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/scores/{classGroup}/broadsheet', [\App\Http\Controllers\ScoreSheetController::class, 'broadsheet'])->name('scores.broadsheet');
         Route::get('/scores/{classGroup}/{subject}', [\App\Http\Controllers\ScoreSheetController::class, 'sheet'])->name('scores.sheet');
         Route::post('/scores/{classGroup}/{subject}', [\App\Http\Controllers\ScoreSheetController::class, 'save'])->name('scores.save');
+    });
+
+    // Transcripts: a pupil's record across several classes (e.g. Basic 1 to Basic 6).
+    Route::middleware('permission:manage-results|manage-students|view-reports')->group(function () {
+        Route::get('/transcripts', [\App\Http\Controllers\TranscriptController::class, 'index'])->name('transcripts.index');
+        Route::get('/transcripts/print', [\App\Http\Controllers\TranscriptController::class, 'bulk'])->name('transcripts.bulk');
+        Route::get('/students/{student}/transcript', [\App\Http\Controllers\TranscriptController::class, 'show'])->name('students.transcript');
     });
 
     // Attendance, conduct and remarks for the terminal report (class teachers / head teacher).
@@ -424,13 +425,9 @@ Route::middleware(['auth'])->group(function () {
             Route::resource('ca-score-settings', \App\Http\Controllers\CaScoreSettingController::class)->except(['show']);
         });
 
-        // Bulk Results Upload
+        // Old SHS spreadsheet result upload - scores are entered on the class score sheet now.
         Route::middleware('permission:manage-results')->group(function () {
-            Route::get('/bulkresults/upload', [BulkResultController::class, 'showUploadForm'])->name('bulkresults.upload');
-            Route::post('/bulkresults/process', [BulkResultController::class, 'processUpload'])->name('bulkresults.process');
-            Route::get('/bulkresults/semesters', [BulkResultController::class, 'getSemesters'])->name('bulkresults.semesters');
-            Route::get('/bulkresults/subjects', [BulkResultController::class, 'getSubjects'])->name('bulkresults.subjects');
-            Route::get('/bulkresults/template/{type?}', [BulkResultController::class, 'downloadTemplate'])->name('bulkresults.template');
+            Route::redirect('/bulkresults/upload', '/scores')->name('bulkresults.upload');
         });
     });
 });

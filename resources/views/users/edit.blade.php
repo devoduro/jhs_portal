@@ -34,6 +34,14 @@
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
+
+                        <div class="mb-4">
+                            <label for="phone" class="block text-sm font-medium text-gray-700">Mobile number <span class="text-gray-400">(for password reset by SMS)</span></label>
+                            <input type="tel" name="phone" id="phone" value="{{ old('phone', $user->phone) }}" placeholder="024 XXX XXXX" class="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md">
+                            @error('phone')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
                         
                         <div class="mb-4">
                             <label for="role" class="block text-sm font-medium text-gray-700">Account Type</label>

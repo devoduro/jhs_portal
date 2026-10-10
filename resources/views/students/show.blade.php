@@ -66,6 +66,9 @@
                 <div class="bg-white shadow-sm rounded-lg p-6">
                     <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
                         <h3 class="font-semibold text-gray-900"><i class="fas fa-file-alt text-primary-600 mr-2"></i>Terminal Reports</h3>
+                        @canany(['manage-results', 'manage-students', 'view-reports'])
+                            <x-button href="{{ route('students.transcript', $student) }}" target="_blank" size="sm" variant="outline-primary" icon="fas fa-scroll">Transcript (all classes)</x-button>
+                        @endcanany
                         <div class="flex flex-wrap items-end gap-2">
                             <form method="GET" action="{{ route('students.report-card', $student) }}" target="_blank" class="flex gap-2">
                                 <select name="semester_id" class="rounded-lg border-gray-300 text-sm">

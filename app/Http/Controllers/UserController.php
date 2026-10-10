@@ -36,6 +36,7 @@ class UserController extends Controller
                 'max:255',
                 Rule::unique('users')->ignore($user->id),
             ],
+            'phone' => 'nullable|string|max:20',
             'profile_photo' => 'nullable|image|max:2048',
         ];
 
@@ -54,6 +55,7 @@ class UserController extends Controller
         $userData = [
             'name' => $request->input('name'),
             'email' => $request->input('email'),
+            'phone' => $request->input('phone'),
         ];
 
         if ($request->filled('password')) {
@@ -152,6 +154,7 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
+            'phone' => 'nullable|string|max:20',
             'role' => 'required|in:admin,student',
             'system_role' => 'nullable|string|exists:roles,name',
             'profile_photo' => 'nullable|image|max:2048',
@@ -166,6 +169,7 @@ class UserController extends Controller
         $userData = [
             'name' => $request->input('name'),
             'email' => $request->input('email'),
+            'phone' => $request->input('phone'),
             'password' => Hash::make($request->input('password')),
             'role' => $request->input('role'),
         ];
@@ -216,6 +220,7 @@ class UserController extends Controller
                 'max:255',
                 Rule::unique('users')->ignore($user->id),
             ],
+            'phone' => 'nullable|string|max:20',
             'profile_photo' => 'nullable|image|max:2048',
         ];
 
@@ -241,6 +246,7 @@ class UserController extends Controller
         $userData = [
             'name' => $request->input('name'),
             'email' => $request->input('email'),
+            'phone' => $request->input('phone'),
         ];
 
         if ($request->filled('password')) {

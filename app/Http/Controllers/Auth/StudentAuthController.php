@@ -162,6 +162,23 @@ class StudentAuthController extends Controller
         // subjects that happen to have a result recorded yet.
         $currentSubjectIds = Subject::where('level', $student->level)->pluck('id');
         $balance = $student->outstandingBalance();
+
+        // Summary of the most recent term the pupil has scores in (position, average).
+        $latestReport = null;
+        if ($latestSemester) {
+            $classGroup = \App\Services\TerminalReportService::classFor($student, $latestSemester);
+            if ($classGroup) {
+                $data = \App\Services\TerminalReportService::forClass($classGroup, $latestSemester, [$student->id]);
+                $mine = $data['pupils']->first();
+                $latestReport = $mine ? [
+                    'term' => $latestSemester->loadMissing('academicYear'),
+                    'position' => $mine['position'],
+                    'roll' => $data['roll'],
+                    'average' => $mine['average'],
+                    'aggregate' => $mine['aggregate'],
+                ] : null;
+            }
+        }
         $isJhs = \App\Support\FormLabel::isJhs($student->level);
 
         // Get WASSCE division standing and other data
@@ -211,7 +228,8 @@ class StudentAuthController extends Controller
             'pendingQuizzesCount',
             'pendingAssignmentsCount',
             'balance',
-            'isJhs'
+            'isJhs',
+            'latestReport'
         ));
     }
 
@@ -298,14 +316,15 @@ class StudentAuthController extends Controller
 
         // If updating other profile information
         $request->validate([
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('students')->ignore($student->id)],
-            'phone' => ['required', 'string', 'max:20'],
-            'address' => ['required', 'string'],
+            // Young pupils rarely have their own email or phone - only the parent's number is needed.
+            'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique('students')->ignore($student->id)],
+            'phone' => ['nullable', 'string', 'max:20'],
+            'address' => ['nullable', 'string'],
             'hometown' => ['nullable', 'string', 'max:255'],
             'gps_address' => ['nullable', 'string', 'max:255'],
             'emergency_contact_name' => ['required', 'string', 'max:255'],
             'emergency_contact_phone' => ['required', 'string', 'max:20'],
-            'emergency_contact_relationship' => ['required', 'string', 'max:50'],
+            'emergency_contact_relationship' => ['nullable', 'string', 'max:50'],
             'date_of_birth' => ['nullable', 'date'],
         ]);
 

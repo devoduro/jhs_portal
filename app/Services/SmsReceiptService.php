@@ -24,11 +24,11 @@ class SmsReceiptService
         $school = Setting::get('institution_name', 'the school');
         $balance = $student->outstandingBalance();
 
-        $message = "Dear Parent, we have received GH¢" . number_format($payment->amount, 2)
+        $message = "Dear Parent, we have received GHS " . number_format($payment->amount, 2)
             . " for {$student->full_name}"
             . ($payment->semester ? " ({$payment->semester->name} fees)" : '')
             . ". Receipt {$payment->receipt_number}. "
-            . ($balance > 0 ? 'Balance owing: GH¢' . number_format($balance, 2) . '. ' : 'Fees fully paid. ')
+            . ($balance > 0 ? 'Balance owing: GHS ' . number_format($balance, 2) . '. ' : 'Fees fully paid. ')
             . "Thank you. - {$school}";
 
         return $this->deliver($student, $message);
@@ -43,7 +43,7 @@ class SmsReceiptService
         }
 
         $school = Setting::get('institution_name', 'the school');
-        $message = "Dear Parent, this is a reminder that {$student->full_name}'s outstanding school fees balance is GH¢"
+        $message = "Dear Parent, this is a reminder that {$student->full_name}'s outstanding school fees balance is GHS "
             . number_format($balance, 2) . ". Kindly settle it at the school's accounts office. Thank you. - {$school}";
 
         return $this->deliver($student, $message);

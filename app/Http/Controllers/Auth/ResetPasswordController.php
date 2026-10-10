@@ -64,6 +64,8 @@ class ResetPasswordController extends Controller
             'token' => 'required',
             'email' => 'required|email',
             'password' => 'required|confirmed|min:8',
+        ], [
+            'password.confirmed' => 'The two passwords do not match.',
         ]);
 
         // Here we will attempt to reset the user's password. If it is successful we
@@ -73,7 +75,8 @@ class ResetPasswordController extends Controller
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
                 $user->forceFill([
-                    'password' => Hash::make($password)
+                    'password' => Hash::make($password),
+                    'first_login' => false,
                 ])->setRememberToken(Str::random(60));
 
                 $user->save();
@@ -86,7 +89,7 @@ class ResetPasswordController extends Controller
         // the application's home authenticated view. If there is an error we can
         // redirect them back to where they came from with their error message.
         return $status == Password::PASSWORD_RESET
-                    ? redirect()->route('login')->with('status', __($status))
+                    ? redirect()->route('login')->with('status', 'Your password has been changed. Sign in with your new password.')
                     : back()->withErrors(['email' => __($status)]);
     }
 }

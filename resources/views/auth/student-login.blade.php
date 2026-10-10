@@ -1,136 +1,43 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+<x-auth-split title="Hello again" subtitle="Pupils and parents — sign in with the admission number" page-title="Pupil sign in"
+              tagline="See terminal reports, positions and the school fees balance anytime.">
+    <form method="POST" action="{{ route('student.login') }}" class="space-y-5" data-auth-form>
+        @csrf
 
-    <title>{{ config('app.name', 'Transcript System') }} - Student Login</title>
+        <div>
+            <label for="index_number" class="mb-1.5 block text-sm font-medium text-gray-800">Admission number</label>
+            <input id="index_number" name="index_number" type="text" value="{{ old('index_number') }}" required autofocus autocomplete="username"
+                   placeholder="e.g. SCH/2026/0012"
+                   class="block w-full rounded-md border px-3.5 py-3 text-sm shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100 {{ $errors->has('index_number') ? 'border-red-400' : 'border-gray-300' }}">
+        </div>
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-    <style>
-        body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #f8f9fa;
-        }
-        .login-container {
-            max-width: 450px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        .card {
-            border: none;
-            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-        }
-        .card-header {
-            background: linear-gradient(to right, #37a23fff, #00b300ff);
-            color: white;
-            text-align: center;
-            padding: 1.5rem;
-            border-bottom: none;
-        }
-        .btn-primary {
-            background: linear-gradient(to right, #088404ff, #118308ff);
-            border: none;
-        }
-        .btn-primary:hover {
-            background: linear-gradient(to right, #088404ff, #118308ff);
-        }
-        .form-control:focus {
-            border-color: #007bff;
-            box-shadow: 0 0 0 0.25rem rgba(0, 123, 255, 0.25);
-        }
-        .input-group-text {
-            background-color: #f8f9fa;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="row justify-content-center align-items-center min-vh-100">
-            <div class="col-md-6 login-container">
-                <div class="card">
-                    <div class="card-header">
-                        @php($institutionLogo = \App\Models\Setting::get('institution_logo'))
-                        <img src="{{ $institutionLogo ? asset('storage/' . $institutionLogo) : asset('images/logos/logo.png') }}" alt="{{ \App\Models\Setting::get('institution_name', 'Your School Name') }}" class="mb-3" style="height: 80px;">
-                        <h3 class="mb-0">Student Login</h3>
-                        <p class="mb-0">Access your results</p>
-                    </div>
-                    <div class="card-body p-4">
-                        @if (session('status'))
-                            <div class="alert alert-success mb-3" role="alert">
-                                {{ session('status') }}
-                            </div>
-                        @endif
-
-                        @if ($errors->any())
-                            <div class="alert alert-danger mb-3">
-                                <ul class="mb-0">
-                                    @foreach ($errors->all() as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @endif
-
-                        <form method="POST" action="{{ route('student.login') }}">
-                            @csrf
-                            
-                            <div class="mb-3">
-                                <label for="index_number" class="form-label">Student ID / Index Number</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="fas fa-id-card"></i></span>
-                                    <input type="text" class="form-control @error('index_number') is-invalid @enderror" id="index_number" name="index_number" value="{{ old('index_number') }}" required autofocus>
-                                </div>
-                                @error('index_number')
-                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                @enderror
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="password" class="form-label">Password</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="fas fa-lock"></i></span>
-                                    <input type="password" class="form-control @error('password') is-invalid @enderror" id="password" name="password" required>
-                                </div>
-                                @error('password')
-                                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                                @enderror
-                            </div>
-                            
-                            <div class="mb-3 form-check">
-                                <input type="checkbox" class="form-check-input" id="remember" name="remember">
-                                <label class="form-check-label" for="remember">Remember me</label>
-                            </div>
-                            
-                            <div class="d-grid gap-2">
-                                <button type="submit" class="btn btn-primary btn-lg">Sign In</button>
-                            </div>
-                        </form>
-
-                        <div class="text-center mt-3">
-                            <a href="{{ route('student.password.request') }}" class="text-decoration-none small" style="color: #088404;">
-                                <i class="fas fa-key me-1"></i>Forgot your password?
-                            </a>
-                        </div>
-
-                    </div>
-                </div>
+        <div>
+            <label for="password" class="mb-1.5 block text-sm font-medium text-gray-800">Password</label>
+            <div class="relative">
+                <input id="password" name="password" type="password" required autocomplete="current-password"
+                       class="block w-full rounded-md border border-gray-300 px-3.5 py-3 pr-11 text-sm shadow-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100">
+                <button type="button" data-toggle-password="password" aria-label="Show password"
+                        class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-gray-400 hover:text-gray-600"><i class="fas fa-eye"></i></button>
             </div>
         </div>
-    </div>
-    
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+
+        <div class="flex items-center justify-between text-sm">
+            <label class="flex items-center gap-2 text-gray-700">
+                <input type="checkbox" name="remember" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                Remember me
+            </label>
+            <a href="{{ route('student.password.request') }}" class="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-800">Forgot password</a>
+        </div>
+
+        <button type="submit" class="flex w-full items-center justify-center rounded-md bg-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:opacity-70">
+            Sign in
+        </button>
+
+        <a href="{{ route('login') }}" class="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50">
+            <i class="fas fa-chalkboard-user text-brand-600"></i> Staff sign in
+        </a>
+    </form>
+
+    <x-slot:footer>
+        No login yet? Ask the school office for your child's portal account.
+    </x-slot:footer>
+</x-auth-split>

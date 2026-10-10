@@ -62,7 +62,17 @@ class DashboardController extends Controller
             'classes' => ClassGroup::count(),
             'teachers' => \App\Models\Teacher::count(),
             'unplaced' => Student::where('status', 'active')->whereNull('class_group_id')->count(),
+            'newThisTerm' => $term?->start_date ? Student::where('created_at', '>=', $term->start_date)->count() : 0,
         ];
+
+        // Chart: active pupils per class level, in promotion order.
+        $levelChart = collect(FormLabel::options())
+            ->map(fn ($label, $level) => ['label' => $label, 'count' => (int) ($pupilsByLevel[$level] ?? 0)])
+            ->filter(fn ($row) => $row['count'] > 0)
+            ->values();
+
+        $termProgress = self::progress($term?->start_date, $term?->vacation_date ?? $term?->end_date);
+        $yearProgress = self::progress($term?->academicYear?->start_date, $term?->academicYear?->end_date);
 
         $fees = null;
         if ($showFees) {
@@ -91,8 +101,13 @@ class DashboardController extends Controller
                 'recent' => StudentPayment::with('student.classGroup')->latest('id')->take(8)->get(),
                 'unbilled' => $term ? Student::where('status', 'active')
                     ->whereDoesntHave('feeCharges', fn ($q) => $q->where('semester_id', $term->id))->count() : 0,
-                'daily' => StudentPayment::where('payment_date', '>=', now()->subDays(13)->toDateString())
-                    ->selectRaw('payment_date, SUM(amount) as total')->groupBy('payment_date')->pluck('total', 'payment_date'),
+                // Charts (same figures as the Collection Report).
+                'byClass' => $term ? \App\Services\FeeReportService::byClass($term)['rows'] : collect(),
+                'items' => $term ? \App\Services\FeeReportService::byItem($term) : collect(),
+                'methods' => $term ? \App\Services\FeeReportService::byMethod($term) : collect(),
+                'dailyFrom' => $dailyFrom = ($term?->start_date && $term->start_date->gt(now()->subDays(29)) && $term->start_date->lte(now()))
+                    ? $term->start_date->copy() : now()->subDays(29)->startOfDay(),
+                'daily' => \App\Services\FeeReportService::daily($dailyFrom, now()),
             ];
         }
 
@@ -115,7 +130,36 @@ class DashboardController extends Controller
             });
         }
 
-        return view('dashboard', compact('term', 'sections', 'stats', 'fees', 'classProgress', 'showFees', 'showAcademics'));
+        // Best pupils this term by average score (any class).
+        $topPupils = collect();
+        if ($showAcademics && $term) {
+            $topPupils = Result::where('semester_id', $term->id)
+                ->selectRaw('student_id, AVG(score) as average, COUNT(*) as subjects')
+                ->groupBy('student_id')
+                ->havingRaw('COUNT(*) >= 3')
+                ->orderByDesc('average')
+                ->take(5)
+                ->get()
+                ->map(fn ($row) => ['student' => Student::with('classGroup')->find($row->student_id), 'average' => round((float) $row->average, 1)])
+                ->filter(fn ($row) => $row['student']);
+        }
+
+        return view('dashboard', compact(
+            'term', 'sections', 'stats', 'fees', 'classProgress', 'showFees', 'showAcademics',
+            'levelChart', 'termProgress', 'yearProgress', 'topPupils'
+        ));
+    }
+
+    /**
+     * Percentage of the way from $start to $end today (0-100), or null without both dates.
+     */
+    public static function progress($start, $end): ?int
+    {
+        if (!$start || !$end || $end->lte($start)) {
+            return null;
+        }
+
+        return (int) max(0, min(100, round($start->diffInDays(now()) / $start->diffInDays($end) * 100)));
     }
 
     /**

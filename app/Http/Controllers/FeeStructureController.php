@@ -43,7 +43,19 @@ class FeeStructureController extends Controller
             ? \App\Models\StudentFeeCharge::where('semester_id', $term->id)->distinct('student_id')->count('student_id')
             : 0;
 
-        return view('fees.structures.index', compact('terms', 'term', 'levels', 'categories', 'amounts', 'totals', 'billedCount'));
+        // Active pupils per level, for the expected-income row.
+        $pupils = Student::where('status', 'active')->selectRaw('level, COUNT(*) as n')->groupBy('level')->pluck('n', 'level')->map(fn ($n) => (int) $n)->all();
+        $activePupils = array_sum($pupils);
+
+        $stats = [
+            'items' => count(array_filter($amounts, fn ($row) => array_sum($row) > 0)),
+            'classes' => count(array_filter($totals, fn ($t) => $t > 0)),
+            'min' => collect($totals)->filter(fn ($t) => $t > 0)->min() ?? 0,
+            'max' => collect($totals)->max() ?? 0,
+            'expected' => collect($totals)->map(fn ($t, $level) => $t * ($pupils[$level] ?? 0))->sum(),
+        ];
+
+        return view('fees.structures.index', compact('terms', 'term', 'levels', 'categories', 'amounts', 'totals', 'billedCount', 'pupils', 'activePupils', 'stats'));
     }
 
     /**

@@ -3,62 +3,98 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Setting;
+use App\Models\User;
+use App\Services\PastechSmsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 
+/**
+ * "Forgot password" for staff (admin, teachers, accountant, head teacher...). The staff
+ * member types either their email or their mobile number:
+ *  - email  -> Laravel's normal reset-link email;
+ *  - phone  -> the same kind of one-time, expiring reset link, sent by SMS to the number on
+ *              their account (or on their teacher record).
+ *
+ * The response never says whether an account exists, so the form can't be used to find out
+ * who has a login. Requests are rate limited on the route.
+ */
 class ForgotPasswordController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Password Reset Controller
-    |--------------------------------------------------------------------------
-    |
-    | This controller is responsible for handling password reset emails and
-    | includes methods for sending these notifications from your application
-    | to your users.
-    |
-    */
+    public const GENERIC_STATUS = 'If an account matches what you entered, a password reset link is on its way. It expires in 60 minutes.';
 
-    /**
-     * Create a new controller instance.
-     *
-     * @return void
-     */
     public function __construct()
     {
         $this->middleware('guest');
     }
-    
-    /**
-     * Display the form to request a password reset link.
-     *
-     * @return \Illuminate\View\View
-     */
+
     public function showLinkRequestForm()
     {
         return view('auth.passwords.email');
     }
-    
-    /**
-     * Send a reset link to the given user.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
-    public function sendResetLinkEmail(Request $request)
+
+    public function sendResetLinkEmail(Request $request, PastechSmsService $sms)
     {
-        $request->validate(['email' => 'required|email']);
+        // Older forms post "email"; the new one posts "login" (email or phone).
+        $login = trim((string) $request->input('login', $request->input('email')));
+        $request->merge(['login' => $login]);
+        $request->validate(['login' => 'required|string|max:255'], ['login.required' => 'Enter your email address or mobile number.']);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
+            return $this->viaEmail($login);
+        }
 
-        return $status == Password::RESET_LINK_SENT
-                    ? back()->with('status', __($status))
-                    : back()->withInput($request->only('email'))
-                            ->withErrors(['email' => __($status)]);
+        if (strlen(preg_replace('/\D/', '', $login)) >= 9) {
+            return $this->viaSms($login, $sms);
+        }
+
+        return back()->withInput()->withErrors(['login' => 'That is not a valid email address or mobile number.']);
+    }
+
+    private function viaEmail(string $email)
+    {
+        $user = User::where('email', $email)->where('role', User::ROLE_ADMIN)->first();
+
+        if ($user) {
+            try {
+                $status = Password::sendResetLink(['email' => $email]);
+            } catch (\Throwable $e) {
+                report($e);
+
+                return back()->withInput()->with('error', 'The email could not be sent right now. Try your mobile number instead, or ask the administrator.');
+            }
+
+            if ($status === Password::RESET_THROTTLED) {
+                return back()->withInput()->withErrors(['login' => __($status)]);
+            }
+        }
+
+        return back()->with('status', self::GENERIC_STATUS);
+    }
+
+    private function viaSms(string $phone, PastechSmsService $sms)
+    {
+        $user = User::findStaffByPhone($phone);
+
+        if ($user) {
+            $link = route('password.reset', ['token' => Password::createToken($user), 'email' => $user->email]);
+            $school = Setting::get('institution_name', 'the school');
+
+            try {
+                $result = $sms->sendSms($user->resetPhone(), "{$school}: reset your portal password here (valid 60 mins): {$link} If you did not ask for this, ignore this message.");
+            } catch (\Throwable $e) {
+                report($e);
+                $result = ['success' => false];
+            }
+
+            if (!($result['success'] ?? false)) {
+                Log::warning("Password reset SMS failed for user {$user->id}", $result);
+
+                return back()->withInput()->with('error', 'The SMS could not be sent right now. Try your email address instead, or ask the administrator.');
+            }
+        }
+
+        return back()->with('status', self::GENERIC_STATUS);
     }
 }

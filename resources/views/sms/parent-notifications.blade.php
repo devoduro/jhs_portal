@@ -13,21 +13,20 @@
 
                     <form method="GET" action="{{ route('sms.parent-notifications') }}" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
                         <div>
-                            <input type="text" name="search" value="{{ request('search') }}" placeholder="Search name or index number" class="block w-full pl-3 pr-3 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                            <input type="text" name="search" value="{{ request('search') }}" placeholder="Pupil name or admission no." class="block w-full pl-3 pr-3 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                         </div>
                         <div>
                             <select name="type" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                                 <option value="">All Types</option>
-                                <option value="exeat" {{ request('type') === 'exeat' ? 'selected' : '' }}>Exeat</option>
-                                <option value="campus_checkin" {{ request('type') === 'campus_checkin' ? 'selected' : '' }}>Campus Check-In</option>
-                                <option value="grades" {{ request('type') === 'grades' ? 'selected' : '' }}>Grades</option>
+                                <option value="grades" {{ request('type') === 'grades' ? 'selected' : '' }}>Terminal report</option>
+                                <option value="fees" {{ request('type') === 'fees' ? 'selected' : '' }}>Fee receipt / reminder</option>
                             </select>
                         </div>
                         <div>
-                            <select name="house_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
-                                <option value="">All Houses</option>
-                                @foreach($houses as $house)
-                                    <option value="{{ $house->id }}" {{ (int) request('house_id') === $house->id ? 'selected' : '' }}>{{ $house->name }}</option>
+                            <select name="class_group_id" class="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
+                                <option value="">All classes</option>
+                                @foreach($classGroups as $classGroup)
+                                    <option value="{{ $classGroup->id }}" {{ (int) request('class_group_id') === $classGroup->id ? 'selected' : '' }}>{{ $classGroup->name }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -50,7 +49,7 @@
                             <button type="submit" class="bg-primary-600 text-white rounded-md px-4 py-2 text-sm hover:bg-primary-700">
                                 <i class="fas fa-filter mr-1"></i> Filter
                             </button>
-                            @if(request()->hasAny(['search', 'type', 'house_id', 'status', 'from', 'to']))
+                            @if(request()->hasAny(['search', 'type', 'class_group_id', 'status', 'from', 'to']))
                                 <a href="{{ route('sms.parent-notifications') }}" class="inline-flex items-center px-3 py-2 text-sm text-gray-600 hover:text-primary-600">
                                     Clear
                                 </a>
@@ -72,7 +71,7 @@
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">House</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
@@ -94,7 +93,7 @@
                                                 </div>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $log->student->house->name ?? '-' }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $log->student->classGroup->name ?? '-' }}</td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm">
                                             @php
                                                 $typeColors = [

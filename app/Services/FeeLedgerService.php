@@ -160,7 +160,9 @@ class FeeLedgerService
 
         $balance = 0.0;
 
-        $chronological = $rows->sortBy(fn ($row) => [$row['date']?->timestamp ?? 0, $row['credit'] !== null ? 1 : 0])
+        // By day; within a day, bills and balances brought forward come before payments, so a
+        // receipt shows the balance after everything owed up to that day.
+        $chronological = $rows->sortBy(fn ($row) => [$row['date']?->toDateString() ?? '', isset($row['payment_id']) ? 1 : 0, $row['payment_id'] ?? 0])
             ->values()
             ->map(function (array $row) use (&$balance) {
                 $balance += $row['debit'] ?? 0;
