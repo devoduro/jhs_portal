@@ -64,7 +64,7 @@
                         @if($settings->where('key', 'institution_logo')->first())
                             <div class="flex flex-col items-center">
                                 <p class="text-sm font-medium text-gray-700 mb-2">Current Logo</p>
-                                <img src="{{ asset($settings->where('key', 'institution_logo')->first()->value) }}" alt="Institution Logo" class="max-h-24 border border-gray-200 rounded">
+                                <img src="{{ asset('storage/' . $settings->where('key', 'institution_logo')->first()->value) }}" alt="Institution Logo" class="max-h-24 border border-gray-200 rounded">
                             </div>
                         @else
                             <div class="flex flex-col items-center">

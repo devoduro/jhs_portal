@@ -34,8 +34,7 @@
         <!-- Letterhead -->
         <div class="text-center border-b-2 border-gray-800 pb-4 mb-6">
             @php
-                $logoFile = public_path('images/logos/institution_logo.png');
-                $logoBase64 = file_exists($logoFile) ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoFile)) : null;
+                $logoBase64 = \App\Support\Branding::logoDataUri();
             @endphp
             @if($logoBase64)
                 <img src="{{ $logoBase64 }}" alt="Institution Logo" class="mx-auto mb-2" style="max-width: 90px; max-height: 90px;">

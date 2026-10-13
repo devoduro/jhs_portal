@@ -85,8 +85,113 @@ class StudentController extends Controller
     {
         $classGroups = $this->classGroupOptions();
         $suggestedAdmissionNumber = $this->nextAdmissionNumber();
+        $classInfo = $this->classInfo($classGroups);
+        $currentTerm = \App\Models\Semester::where('is_current', true)->first();
 
-        return view('students.create', compact('classGroups', 'suggestedAdmissionNumber'));
+        return view('students.create', compact('classGroups', 'suggestedAdmissionNumber', 'classInfo', 'currentTerm'));
+    }
+
+    /**
+     * What the picker shows next to each class: pupils on roll and the current term's fees
+     * for that class level, so the person admitting knows what the pupil will be billed.
+     *
+     * @return array<int, array{roll: int, fees: float, level: int}>
+     */
+    protected function classInfo($classGroups): array
+    {
+        $term = \App\Models\Semester::where('is_current', true)->first();
+        $fees = $term ? \App\Models\FeeStructure::where('semester_id', $term->id)->selectRaw('level, SUM(amount) as total')->groupBy('level')->pluck('total', 'level') : collect();
+        $rolls = Student::where('status', 'active')->selectRaw('class_group_id, COUNT(*) as n')->groupBy('class_group_id')->pluck('n', 'class_group_id');
+
+        return $classGroups->mapWithKeys(fn ($c) => [$c->id => [
+            'roll' => (int) ($rolls[$c->id] ?? 0),
+            'fees' => (float) ($fees[$c->level] ?? 0),
+            'level' => (int) $c->level,
+        ]])->all();
+    }
+
+    /**
+     * Pupils who look like the one being admitted (same name words), so the same child is not
+     * admitted twice. JSON for the admit form.
+     */
+    public function duplicates(Request $request)
+    {
+        $words = collect(preg_split('/\s+/', trim((string) $request->query('name', ''))))->filter(fn ($w) => mb_strlen($w) >= 2)->take(3);
+
+        if ($words->count() < 2) {
+            return response()->json([]);
+        }
+
+        $matches = Student::with('classGroup')
+            ->when($request->filled('except'), fn ($q) => $q->where('id', '!=', (int) $request->except))
+            ->where(function ($q) use ($words) {
+                foreach ($words as $word) {
+                    $q->where('full_name', 'like', "%{$word}%");
+                }
+            })
+            ->orderByRaw("status = 'active' DESC")->limit(5)->get();
+
+        return response()->json($matches->map(fn (Student $s) => [
+            'name' => $s->full_name,
+            'admission' => $s->index_number,
+            'class' => $s->classGroup->name ?? \App\Support\FormLabel::label($s->level),
+            'dob' => $s->date_of_birth?->format('d M Y'),
+            'status' => $s->status,
+            'url' => route('students.show', $s),
+        ])->values());
+    }
+
+    /**
+     * Find a pupil whose parent/guardian details can be copied onto a brother or sister being
+     * admitted. JSON for the admit form.
+     */
+    public function family(Request $request)
+    {
+        $term = trim((string) $request->query('q', ''));
+
+        if (mb_strlen($term) < 2) {
+            return response()->json([]);
+        }
+
+        $pupils = Student::with('classGroup')
+            ->where(fn ($q) => $q->where('full_name', 'like', "%{$term}%")->orWhere('index_number', 'like', "%{$term}%")
+                ->orWhere('emergency_contact_name', 'like', "%{$term}%")->orWhere('emergency_contact_phone', 'like', "%{$term}%"))
+            ->orderByRaw("status = 'active' DESC")->orderBy('full_name')->limit(6)->get();
+
+        return response()->json($pupils->map(fn (Student $s) => [
+            'name' => $s->full_name,
+            'class' => $s->classGroup->name ?? \App\Support\FormLabel::label($s->level),
+            'parent' => [
+                'emergency_contact_name' => $s->emergency_contact_name,
+                'emergency_contact_relationship' => $s->emergency_contact_relationship,
+                'emergency_contact_phone' => $s->emergency_contact_phone,
+                'parent_email' => $s->parent_email,
+                'phone' => $s->phone,
+                'address' => $s->address,
+                'hometown' => $s->hometown,
+                'gps_address' => $s->gps_address,
+            ],
+        ])->values());
+    }
+
+    /**
+     * Ghana mobile numbers as the SMS gateway wants them: digits only, leading 0
+     * (233 24 123 4567 becomes 0241234567).
+     */
+    protected function cleanPhone(?string $phone): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $phone);
+
+        if ($digits === '') {
+            return null;
+        }
+        if (str_starts_with($digits, '233') && strlen($digits) >= 12) {
+            $digits = '0' . substr($digits, 3);
+        } elseif (strlen($digits) === 9) {
+            $digits = '0' . $digits;
+        }
+
+        return $digits;
     }
 
     protected function classGroupOptions()
@@ -129,6 +234,7 @@ class StudentController extends Controller
             'emergency_contact_name' => 'nullable|string|max:255',
             'emergency_contact_relationship' => 'nullable|string|max:100',
             'emergency_contact_phone' => 'nullable|string|max:20',
+            'parent_email' => 'nullable|email|max:255',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
@@ -141,13 +247,19 @@ class StudentController extends Controller
     {
         $data = $request->only([
             'index_number', 'full_name', 'date_of_birth', 'gender', 'class_group_id', 'level', 'status',
-            'emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone',
+            'emergency_contact_name', 'emergency_contact_relationship', 'emergency_contact_phone', 'parent_email',
             'email', 'phone', 'address', 'hometown', 'gps_address',
         ]);
 
         foreach (['level', 'date_of_birth', 'index_number', 'status'] as $field) {
             if (($data[$field] ?? '') === '') {
                 unset($data[$field]);
+            }
+        }
+
+        foreach (['emergency_contact_phone', 'phone'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = $this->cleanPhone($data[$field]);
             }
         }
 
@@ -183,6 +295,15 @@ class StudentController extends Controller
 
         $student = Student::create($data);
         $message = "{$student->full_name} admitted with admission number {$student->index_number}.";
+
+        // Optionally put this term's fees on the new pupil's account straight away.
+        if ($request->boolean('bill_now') && $student->level) {
+            $term = \App\Models\Semester::where('is_current', true)->first();
+            $stats = $term ? \App\Services\FeeLedgerService::billTerm($term, collect([$student])) : null;
+            $message .= $stats && $stats['billed']
+                ? ' ' . $term->name . ' fees of GH₵ ' . number_format($stats['total'], 2) . ' billed.'
+                : ' (No fees are set for their class this term, so nothing was billed.)';
+        }
 
         if ($request->input('after') === 'another') {
             return redirect()->route('students.create')->with('success', $message);

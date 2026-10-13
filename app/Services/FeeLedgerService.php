@@ -93,6 +93,97 @@ class FeeLedgerService
     }
 
     /**
+     * Fee position of many pupils at once with one grouped query per table (never per pupil):
+     * what is owed overall now, and the given term's bill and payments.
+     *
+     * @param  Collection<int, int>  $studentIds
+     * @return array<int, array{balance: float, term_bill: float, term_paid: float}>
+     */
+    public static function positions(Collection $studentIds, ?Semester $term = null): array
+    {
+        $sum = fn ($model, ?int $termId = null) => $model::whereIn('student_id', $studentIds)
+            ->when($termId, fn ($q) => $q->where('semester_id', $termId))
+            ->selectRaw('student_id, SUM(amount) as total')
+            ->groupBy('student_id')
+            ->pluck('total', 'student_id');
+
+        $charges = $sum(\App\Models\StudentFeeCharge::class);
+        $payments = $sum(\App\Models\StudentPayment::class);
+        $arrears = $sum(\App\Models\StudentArrear::class);
+        $termCharges = $term ? $sum(\App\Models\StudentFeeCharge::class, $term->id) : collect();
+        $termPayments = $term ? $sum(\App\Models\StudentPayment::class, $term->id) : collect();
+
+        $positions = [];
+        foreach ($studentIds as $id) {
+            $positions[$id] = [
+                'balance' => (float) ($charges[$id] ?? 0) + (float) ($arrears[$id] ?? 0) - (float) ($payments[$id] ?? 0),
+                'term_bill' => (float) ($termCharges[$id] ?? 0),
+                'term_paid' => (float) ($termPayments[$id] ?? 0),
+            ];
+        }
+
+        return $positions;
+    }
+
+    /**
+     * What billing a term would do, per class, before anything is saved: pupils, how many still
+     * have fee items to be billed, how many new bill items and how much money that adds.
+     *
+     * @param  array<int, string>  $categories  limit to these fee items (empty = all)
+     * @return array{rows: Collection, new_items: int, new_total: float, pupils: int, no_fees: int}
+     */
+    public static function termPlan(Semester $term, array $categories = []): array
+    {
+        $structures = FeeStructure::where('semester_id', $term->id)
+            ->when($categories, fn ($q) => $q->whereIn('category', $categories))
+            ->get()
+            ->groupBy('level');
+
+        $pupils = Student::with('classGroup')->where('status', 'active')->whereNotNull('level')->get();
+        $billed = StudentFeeCharge::where('semester_id', $term->id)
+            ->get(['student_id', 'category'])
+            ->groupBy('student_id')
+            ->map(fn ($rows) => $rows->pluck('category')->all());
+
+        $rows = [];
+        $noFees = 0;
+
+        foreach ($pupils as $pupil) {
+            $items = $structures->get($pupil->level, collect());
+            if ($items->isEmpty()) {
+                $noFees++;
+                continue;
+            }
+
+            $have = $billed->get($pupil->id, []);
+            $missing = $items->reject(fn ($i) => in_array($i->category, $have, true));
+
+            $key = $pupil->class_group_id ?? 'none';
+            $rows[$key] ??= [
+                'class' => $pupil->classGroup?->name ?? 'Not in a class',
+                'level' => $pupil->level,
+                'pupils' => 0, 'to_bill' => 0, 'items' => 0, 'amount' => 0.0,
+            ];
+            $rows[$key]['pupils']++;
+            if ($missing->isNotEmpty()) {
+                $rows[$key]['to_bill']++;
+                $rows[$key]['items'] += $missing->count();
+                $rows[$key]['amount'] += (float) $missing->sum('amount');
+            }
+        }
+
+        $rows = collect($rows)->sortBy('level')->values();
+
+        return [
+            'rows' => $rows,
+            'new_items' => (int) $rows->sum('items'),
+            'new_total' => (float) $rows->sum('amount'),
+            'pupils' => (int) $rows->sum('pupils'),
+            'no_fees' => $noFees,
+        ];
+    }
+
+    /**
      * Full statement of account, newest first, each row carrying the running balance.
      */
     public static function ledgerFor(Student $student): array

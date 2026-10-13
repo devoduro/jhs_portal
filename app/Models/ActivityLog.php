@@ -11,6 +11,9 @@ class ActivityLog extends Model
         'user_type',
         'action',
         'description',
+        'route_name',
+        'method',
+        'subject',
         'ip_address',
         'user_agent'
     ];

@@ -61,6 +61,7 @@ Route::middleware(['guest'])->group(function () {
 Route::middleware(['auth', 'admin'])->group(function () {
     Route::middleware('permission:view-activity-logs')->group(function () {
         Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('activity-logs.index');
+        Route::get('/activity-logs/export', [ActivityLogController::class, 'export'])->name('activity-logs.export');
     });
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/admin/dashboard', [DashboardController::class, 'index'])->name('admin.dashboard');
@@ -87,6 +88,12 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/profile', [UserController::class, 'profile'])->name('profile');
     Route::put('/profile', [UserController::class, 'updateProfile'])->name('profile.update');
 
+    // Class lists: admins and office staff for any class, teachers for their own classes (checked in the controller).
+    Route::get('/class-lists', [\App\Http\Controllers\ClassListController::class, 'index'])->name('class-lists.index');
+    Route::get('/class-lists/{classGroup}', [\App\Http\Controllers\ClassListController::class, 'show'])->name('class-lists.show');
+    Route::get('/class-lists/{classGroup}/file', [\App\Http\Controllers\ClassListController::class, 'file'])->name('class-lists.file');
+    Route::get('/class-lists/{classGroup}/excel', [\App\Http\Controllers\ClassListController::class, 'excel'])->name('class-lists.excel');
+
     // Teacher self-service (not permission-gated - any account linked to a teacher profile)
     Route::get('/my-profile', [\App\Http\Controllers\TeacherPortalController::class, 'profile'])->name('teacher.profile.edit');
     Route::put('/my-profile', [\App\Http\Controllers\TeacherPortalController::class, 'updateProfile'])->name('teacher.profile.update');
@@ -97,6 +104,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/students/{id}/create-account', [StudentController::class, 'createUserAccount'])->name('students.create-account');
         Route::post('/students/bulk-create-accounts', [StudentController::class, 'bulkCreateUserAccounts'])->name('students.bulk-create-accounts');
         Route::post('/students/bulk-reset-passwords', [StudentController::class, 'bulkResetPasswords'])->name('students.bulk-reset-passwords');
+        Route::get('/students/check-duplicates', [StudentController::class, 'duplicates'])->name('students.duplicates');
+        Route::get('/students/find-family', [StudentController::class, 'family'])->name('students.family');
         Route::resource('students', StudentController::class);
         Route::get('/students/{student}/results', [StudentController::class, 'results'])->name('students.results');
         Route::get('/students-import', [StudentController::class, 'importForm'])->name('students.import.form');
@@ -118,6 +127,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sms/send', [\App\Http\Controllers\SmsController::class, 'send'])->name('sms.send');
         Route::get('/sms/history', [\App\Http\Controllers\SmsController::class, 'history'])->name('sms.history');
         Route::get('/sms/history/{campaign}', [\App\Http\Controllers\SmsController::class, 'showCampaign'])->name('sms.history.show');
+        Route::get('/parent-notices', [\App\Http\Controllers\ParentNoticeController::class, 'index'])->name('parent-notices.index');
+        Route::post('/parent-notices', [\App\Http\Controllers\ParentNoticeController::class, 'send'])->name('parent-notices.send');
         Route::get('/sms/parent-notifications', [\App\Http\Controllers\SmsController::class, 'parentNotifications'])->name('sms.parent-notifications');
         Route::post('/students/{student}/send-grades', [StudentController::class, 'sendGrades'])->name('students.send-grades');
         Route::post('/semesters/{semester}/notify-parents', [\App\Http\Controllers\SemesterController::class, 'notifyParentsOfResults'])->name('semesters.notify-parents');
@@ -137,7 +148,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/subjects/{subject}/export', [SubjectController::class, 'export'])->name('subjects.export');
 
         // Teachers
-        Route::get('/teachers/import', [\App\Http\Controllers\TeacherController::class, 'importForm'])->name('teachers.import.form');
+        Route::get('/teachers/check-duplicates', [\App\Http\Controllers\TeacherController::class, 'duplicates'])->name('teachers.duplicates');
+        Route::get('/teachers/import',[\App\Http\Controllers\TeacherController::class, 'importForm'])->name('teachers.import.form');
         Route::post('/teachers/import', [\App\Http\Controllers\TeacherController::class, 'import'])->name('teachers.import.store');
         Route::get('/teachers/import/template', [\App\Http\Controllers\TeacherController::class, 'downloadTemplate'])->name('teachers.import.template');
         Route::get('/teachers/export/excel', [\App\Http\Controllers\TeacherController::class, 'exportExcel'])->name('teachers.export.excel');
@@ -245,6 +257,17 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/fees/arrears/template', [ArrearsController::class, 'downloadTemplate'])->name('fees.arrears.template');
         Route::post('/fees/arrears/bulk-destroy', [ArrearsController::class, 'bulkDestroy'])->name('fees.arrears.bulk-destroy');
         Route::delete('/fees/arrears/{arrear}', [ArrearsController::class, 'destroy'])->name('fees.arrears.destroy');
+
+        // Bulk billing and collection (before the /fees/{student} wildcard below).
+        Route::get('/fees/bulk-bill', [\App\Http\Controllers\BulkBillController::class, 'create'])->name('fees.bulk-bill');
+        Route::post('/fees/bulk-bill/preview', [\App\Http\Controllers\BulkBillController::class, 'preview'])->name('fees.bulk-bill.preview');
+        Route::post('/fees/bulk-bill', [\App\Http\Controllers\BulkBillController::class, 'store'])->name('fees.bulk-bill.store');
+        Route::get('/fees/collect', [\App\Http\Controllers\PaymentCollectionController::class, 'sheet'])->name('fees.collect');
+        Route::post('/fees/collect', [\App\Http\Controllers\PaymentCollectionController::class, 'storeSheet'])->name('fees.collect.store');
+        Route::get('/fees/payments/upload', [\App\Http\Controllers\PaymentCollectionController::class, 'uploadForm'])->name('fees.payments.upload');
+        Route::post('/fees/payments/import', [\App\Http\Controllers\PaymentCollectionController::class, 'import'])->name('fees.payments.import');
+        Route::get('/fees/payments/template', [\App\Http\Controllers\PaymentCollectionController::class, 'template'])->name('fees.payments.template');
+        Route::post('/fees/payments/bulk-destroy', [\App\Http\Controllers\PaymentCollectionController::class, 'bulkDestroy'])->name('fees.payments.bulk-destroy');
 
         Route::get('/fees/{student}', [StudentPaymentController::class, 'show'])->name('fees.show');
         Route::post('/fees/{student}/charges', [\App\Http\Controllers\StudentFeeChargeController::class, 'store'])->name('fees.charges.store');
@@ -421,8 +444,13 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/settings/institution', [SettingController::class, 'institution'])->name('settings.institution');
             Route::put('/settings/institution', [SettingController::class, 'updateInstitution'])->name('settings.institution.update');
 
-            // CA Score Settings
-            Route::resource('ca-score-settings', \App\Http\Controllers\CaScoreSettingController::class)->except(['show']);
+            // Score sheets: the columns teachers enter marks on (continuous assessment + exam), per class level.
+            Route::get('/assessment-settings', [\App\Http\Controllers\AssessmentSettingController::class, 'index'])->name('assessment-settings.index');
+            Route::get('/assessment-settings/{level}/edit', [\App\Http\Controllers\AssessmentSettingController::class, 'edit'])->whereNumber('level')->name('assessment-settings.edit');
+            Route::put('/assessment-settings/{level}', [\App\Http\Controllers\AssessmentSettingController::class, 'update'])->whereNumber('level')->name('assessment-settings.update');
+            Route::delete('/assessment-settings/{level}', [\App\Http\Controllers\AssessmentSettingController::class, 'destroy'])->whereNumber('level')->name('assessment-settings.destroy');
+            // The old college-style CA score settings screen now lives here.
+            Route::redirect('/ca-score-settings', '/assessment-settings')->name('ca-score-settings.index');
         });
 
         // Old SHS spreadsheet result upload - scores are entered on the class score sheet now.

@@ -36,7 +36,13 @@
 
             @if($classGroups->isEmpty())
                 <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 text-sm">
-                    You are not the class teacher of any class. The administrator sets class teachers under Classes.
+                    You are not the class teacher of any class and are not assigned to teach any subject yet. The administrator sets class teachers under Classes and subject teachers under Subjects.
+                </div>
+            @endif
+
+            @if(request()->filled('class_group_id') && !$classGroup && $classGroups->isNotEmpty())
+                <div class="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 text-sm">
+                    You are not assigned to that class, so it is not in your list. Choose one of your classes above.
                 </div>
             @endif
 

@@ -215,21 +215,10 @@ class ClassGroupController extends Controller
     }
 
     /**
-     * Print a class roster with an institution letterhead.
+     * The old print page - class lists are now printed from Class Lists (any column choice, PDF and Excel).
      */
     public function print(ClassGroup $classGroup)
     {
-        $classGroup->load('classTeacher');
-
-        $students = Student::where('class_group_id', $classGroup->id)
-            ->orderBy('full_name')
-            ->get();
-
-        $settings = \Illuminate\Support\Facades\DB::table('settings')
-            ->where('category', 'institution')
-            ->pluck('value', 'key')
-            ->toArray();
-
-        return view('class-groups.print', compact('classGroup', 'students', 'settings'));
+        return redirect()->route('class-lists.show', $classGroup);
     }
 }

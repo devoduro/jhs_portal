@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AssessmentComponent;
 use App\Models\ClassGroup;
 use App\Models\Result;
+use App\Models\ResultComponentScore;
 use App\Models\Semester;
 use App\Models\Subject;
 use App\Services\TerminalReportService;
@@ -69,28 +71,32 @@ class ScoreSheetController extends Controller
 
         $positions = TerminalReportService::rank($results->mapWithKeys(fn ($r) => [$r->student_id => (float) $r->score])->all());
 
-        $classMax = TerminalReportService::classScoreMax();
-        $examMax = TerminalReportService::examScoreMax();
+        $columns = AssessmentComponent::sheetFor($classGroup->level);
 
-        return view('scores.sheet', compact('classGroup', 'subject', 'term', 'students', 'results', 'positions', 'classMax', 'examMax'));
+        // Marks already entered per component: [result id][component id] => score.
+        $componentScores = ResultComponentScore::whereIn('result_id', $results->pluck('id'))->get()
+            ->groupBy('result_id')
+            ->map(fn ($rows) => $rows->pluck('score', 'assessment_component_id'));
+
+        return view('scores.sheet', compact('classGroup', 'subject', 'term', 'students', 'results', 'positions', 'columns', 'componentScores'));
     }
 
     public function save(Request $request, ClassGroup $classGroup, Subject $subject)
     {
         $this->authorizeSheet($classGroup, $subject);
 
-        $classMax = TerminalReportService::classScoreMax();
-        $examMax = TerminalReportService::examScoreMax();
+        $columns = AssessmentComponent::sheetFor($classGroup->level);
 
-        $request->validate([
-            'semester_id' => 'required|exists:semesters,id',
-            'scores' => 'required|array',
-            'scores.*.class_score' => "nullable|numeric|min:0|max:{$classMax}",
-            'scores.*.exam_score' => "nullable|numeric|min:0|max:{$examMax}",
-        ], [
-            'scores.*.class_score.max' => "Class score cannot be more than {$classMax}.",
-            'scores.*.exam_score.max' => "Exam score cannot be more than {$examMax}.",
-        ]);
+        $rules = ['semester_id' => 'required|exists:semesters,id', 'scores' => 'required|array'];
+        $messages = [];
+        foreach ($columns as $column) {
+            $max = $column['max'];
+            $rules["scores.*.{$column['key']}"] = "nullable|numeric|min:0|max:{$max}";
+            $messages["scores.*.{$column['key']}.max"] = "{$column['label']} cannot be more than " . rtrim(rtrim(number_format($max, 2, '.', ''), '0'), '.') . '.';
+            $messages["scores.*.{$column['key']}.numeric"] = "{$column['label']} must be a number.";
+        }
+
+        $request->validate($rules, $messages);
 
         $term = Semester::findOrFail($request->semester_id);
 

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  * conduct, attitude, interest, class teacher's remark, head teacher's remark and (in the
  * last term of the year) the class each pupil is promoted to.
  *
- * Teachers only see classes they are class teacher of and cannot write the head teacher's
+ * Teachers see classes they are class teacher of and classes at levels they teach, and cannot write the head teacher's
  * remark; the head teacher / exams officer / admin see every class.
  */
 class TermReportController extends Controller
@@ -50,7 +50,7 @@ class TermReportController extends Controller
 
     public function save(Request $request, ClassGroup $classGroup)
     {
-        abort_unless($this->allowedClasses()->contains('id', $classGroup->id), 403, 'You are not the class teacher of this class.');
+        abort_unless($this->allowedClasses()->contains('id', $classGroup->id), 403, 'You are not assigned to this class.');
 
         $request->validate([
             'semester_id' => 'required|exists:semesters,id',
@@ -117,7 +117,12 @@ class TermReportController extends Controller
             return $classes;
         }
 
-        return $classes->where('class_teacher_id', $this->authTeacherId() ?? 0)->values();
+        // Their own class, plus any class at a level where they teach a subject (the same classes
+        // they can enter scores for), so a teacher can complete reports for classes they teach.
+        $teacherId = $this->authTeacherId() ?? 0;
+        $subjectLevels = \App\Models\Subject::whereHas('teachers', fn ($q) => $q->where('teachers.id', $teacherId))->pluck('level')->unique();
+
+        return $classes->filter(fn ($c) => $c->class_teacher_id === $teacherId || $subjectLevels->contains($c->level))->values();
     }
 
     private function canWriteHeadRemark(): bool

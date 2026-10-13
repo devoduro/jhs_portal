@@ -64,6 +64,7 @@ class StudentsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 'emergency_contact_name' => $row['parent_name'] ?? null,
                 'emergency_contact_relationship' => $row['relationship'] ?? null,
                 'emergency_contact_phone' => isset($row['parent_phone']) ? $this->phone($row['parent_phone']) : null,
+                'parent_email' => filter_var(trim((string) ($row['parent_email'] ?? '')), FILTER_VALIDATE_EMAIL) ?: null,
                 'address' => $row['address'] ?? null,
                 'status' => 'active',
             ];

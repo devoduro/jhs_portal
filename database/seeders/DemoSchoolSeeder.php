@@ -36,7 +36,7 @@ class DemoSchoolSeeder extends Seeder
 
         $year = AcademicYear::firstOrCreate(['name' => '2026/2027'], ['start_date' => '2026-09-08', 'end_date' => '2027-07-30']);
         AcademicYear::query()->update(['is_current' => false]);
-        $year->update(['is_current' => true]);
+        AcademicYear::whereKey($year->id)->update(['is_current' => true]);   // (not $year->update: the model still thinks it is current, so nothing would be saved)
 
         $dates = [1 => ['2026-09-08', '2026-12-18', '2027-01-12'], 2 => ['2027-01-12', '2027-04-09', '2027-05-04'], 3 => ['2027-05-04', '2027-07-30', '2027-09-07']];
         foreach ([1 => 'First Term', 2 => 'Second Term', 3 => 'Third Term'] as $n => $name) {

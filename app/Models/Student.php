@@ -33,6 +33,7 @@ class Student extends Model
         'profile_photo',
         'emergency_contact_name',
         'emergency_contact_phone',
+        'parent_email',
         'email',
         'phone',
         'address',

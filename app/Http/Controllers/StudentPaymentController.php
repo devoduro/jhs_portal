@@ -284,10 +284,21 @@ class StudentPaymentController extends Controller
     {
         abort_unless($request->user()->can('send-sms'), 403);
 
-        $request->validate(['student_ids' => 'required|array', 'student_ids.*' => 'exists:students,id']);
+        if ($request->boolean('all_owing')) {
+            // Everyone owing in the list as currently filtered (class, level, search...).
+            [, $rows] = $this->buildFeeRows($request);
+            $ids = $rows->where('status', 'debtor')->pluck('student.id')->all();
+
+            if (!$ids) {
+                return back()->with('error', 'Nobody in this list owes anything.');
+            }
+        } else {
+            $request->validate(['student_ids' => 'required|array', 'student_ids.*' => 'exists:students,id']);
+            $ids = $request->student_ids;
+        }
 
         $sent = 0;
-        $students = Student::whereIn('id', $request->student_ids)->get();
+        $students = Student::whereIn('id', $ids)->get();
 
         foreach ($students as $student) {
             if ($sms->sendReminder($student)) {

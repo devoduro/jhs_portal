@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AssessmentComponent;
 use App\Models\ClassGroup;
 use App\Models\GradeScheme;
 use App\Models\Result;
@@ -111,19 +112,28 @@ class TerminalReportService
     }
 
     /**
-     * Save one subject's scores for a class. $scores = [student_id => ['class_score' => x,
-     * 'exam_score' => y]]. A row with both scores blank removes that pupil's result.
+     * Save one subject's scores for a class. $scores = [student_id => [column key => mark]],
+     * where the columns are the class level's score sheet (AssessmentComponent::sheetFor):
+     * 'class_score' / 'exam_score' on the default sheet, or 'c<id>' per admin-defined
+     * component. Component marks are summed into the pupil's class score and exam score, so
+     * report cards and broadsheets work the same whichever sheet a level uses.
+     *
+     * A row with every mark blank removes that pupil's result - except a result recorded
+     * before the level was given components (it has only totals), which is left untouched.
      */
     public static function saveScores(ClassGroup $classGroup, Subject $subject, Semester $term, array $scores): int
     {
+        $columns = AssessmentComponent::sheetFor($classGroup->level);
+        $usesComponents = $columns->contains(fn ($c) => $c['id'] !== null);
         $saved = 0;
 
-        DB::transaction(function () use ($classGroup, $subject, $term, $scores, &$saved) {
+        DB::transaction(function () use ($classGroup, $subject, $term, $scores, $columns, $usesComponents, &$saved) {
             foreach ($scores as $studentId => $row) {
-                $class = $row['class_score'] ?? null;
-                $exam = $row['exam_score'] ?? null;
-                $class = ($class === '' || $class === null) ? null : (float) $class;
-                $exam = ($exam === '' || $exam === null) ? null : (float) $exam;
+                $marks = [];
+                foreach ($columns as $column) {
+                    $value = $row[$column['key']] ?? null;
+                    $marks[$column['key']] = ($value === '' || $value === null) ? null : (float) $value;
+                }
 
                 $match = [
                     'student_id' => (int) $studentId,
@@ -132,15 +142,29 @@ class TerminalReportService
                     'academic_year_id' => $term->academic_year_id,
                 ];
 
-                if ($class === null && $exam === null) {
-                    Result::where($match)->delete();
+                if (collect($marks)->every(fn ($m) => $m === null)) {
+                    $existing = Result::where($match)->first();
+
+                    if ($existing && (!$usesComponents || $existing->componentScores()->exists())) {
+                        $existing->delete();
+                    }
                     continue;
                 }
+
+                // Sum the marks that count towards each of the two report-card scores; stays
+                // null when nothing was entered towards it (a blank is not a zero).
+                $sumFor = function (string $type) use ($columns, $marks) {
+                    $entered = $columns->where('type', $type)->map(fn ($c) => $marks[$c['key']])->filter(fn ($m) => $m !== null);
+
+                    return $entered->isEmpty() ? null : round($entered->sum(), 2);
+                };
+                $class = $sumFor(AssessmentComponent::TYPE_CLASS);
+                $exam = $sumFor(AssessmentComponent::TYPE_EXAM);
 
                 $total = round(($class ?? 0) + ($exam ?? 0), 2);
                 $grading = GradeScheme::gradeFor($total, $classGroup->level);
 
-                Result::updateOrCreate($match, [
+                $result = Result::updateOrCreate($match, [
                     'class_group_id' => $classGroup->id,
                     'class_score' => $class,
                     'exam_score' => $exam,
@@ -149,6 +173,21 @@ class TerminalReportService
                     'grade_point' => $grading['grade_point'] ?? 0,
                     'remark' => $grading['remark'],
                 ]);
+
+                if ($usesComponents) {
+                    $keep = [];
+                    foreach ($columns as $column) {
+                        if ($marks[$column['key']] === null) {
+                            continue;
+                        }
+                        $result->componentScores()->updateOrCreate(
+                            ['assessment_component_id' => $column['id']],
+                            ['score' => $marks[$column['key']]]
+                        );
+                        $keep[] = $column['id'];
+                    }
+                    $result->componentScores()->whereNotIn('assessment_component_id', $keep ?: [0])->delete();
+                }
 
                 $saved++;
             }

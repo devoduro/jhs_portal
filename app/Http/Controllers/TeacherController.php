@@ -124,15 +124,148 @@ class TeacherController extends Controller
      */
     public function create()
     {
-        $departments = Department::orderBy('name')->get();
+        return view('teachers.create', $this->formData() + ['suggestedStaffId' => $this->nextStaffId()]);
+    }
 
-        return view('teachers.create', compact('departments'));
+    /**
+     * Everything the add / edit form needs: departments, the classes a teacher could be class
+     * teacher of (those without one, plus this teacher's own) and subjects grouped by class level.
+     */
+    protected function formData(?Teacher $teacher = null): array
+    {
+        return [
+            'departments' => Department::orderBy('name')->get(),
+            'classOptions' => \App\Models\ClassGroup::with('classTeacher')
+                ->where(fn ($q) => $q->whereNull('class_teacher_id')->when($teacher, fn ($q2) => $q2->orWhere('class_teacher_id', $teacher->id)))
+                ->orderBy('level')->orderBy('name')->get(),
+            'subjectsByLevel' => Subject::orderBy('level')->orderBy('title')->get()->groupBy('level'),
+            'currentClassIds' => $teacher ? $teacher->classesInCharge()->pluck('id')->all() : [],
+            'currentSubjectIds' => $teacher ? $teacher->subjects()->pluck('subjects.id')->all() : [],
+        ];
+    }
+
+    /**
+     * The next free staff ID in the school's TCH001 pattern.
+     */
+    protected function nextStaffId(): string
+    {
+        $highest = Teacher::where('staff_id', 'like', 'TCH%')->pluck('staff_id')
+            ->map(fn ($id) => (int) preg_replace('/\D/', '', $id))->max() ?? 0;
+
+        do {
+            $highest++;
+            $id = 'TCH' . str_pad((string) $highest, 3, '0', STR_PAD_LEFT);
+        } while (Teacher::where('staff_id', $id)->exists());
+
+        return $id;
+    }
+
+    /**
+     * Ghana mobile numbers as the SMS gateway wants them: digits only, leading 0.
+     */
+    protected function cleanPhone(?string $phone): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $phone);
+
+        if ($digits === '') {
+            return null;
+        }
+        if (str_starts_with($digits, '233') && strlen($digits) >= 12) {
+            $digits = '0' . substr($digits, 3);
+        } elseif (strlen($digits) === 9) {
+            $digits = '0' . $digits;
+        }
+
+        return $digits;
+    }
+
+    /**
+     * Teachers who look like the one being added (same email, phone, staff ID or name words), as
+     * JSON for the add form's "already on record" warning.
+     */
+    public function duplicates(Request $request)
+    {
+        $words = collect(preg_split('/\s+/', trim((string) $request->query('name', ''))))->filter(fn ($w) => mb_strlen($w) >= 2)->take(3);
+        $email = trim((string) $request->query('email', ''));
+        $phone = $this->cleanPhone($request->query('phone'));
+        $staffId = trim((string) $request->query('staff_id', ''));
+
+        if ($words->count() < 2 && $email === '' && !$phone && $staffId === '') {
+            return response()->json([]);
+        }
+
+        $matches = Teacher::query()
+            ->when($request->filled('except'), fn ($q) => $q->where('id', '!=', (int) $request->except))
+            ->where(function ($q) use ($words, $email, $phone, $staffId) {
+                if ($words->count() >= 2) {
+                    $q->orWhere(function ($w) use ($words) {
+                        foreach ($words as $word) {
+                            $w->where('name', 'like', "%{$word}%");
+                        }
+                    });
+                }
+                $email !== '' && $q->orWhere('email', $email);
+                $phone && $q->orWhere('phone', $phone);
+                $staffId !== '' && $q->orWhere('staff_id', $staffId);
+            })
+            ->limit(5)->get();
+
+        return response()->json($matches->map(fn (Teacher $t) => [
+            'name' => $t->name,
+            'staff_id' => $t->staff_id,
+            'why' => collect([
+                $email !== '' && $t->email === $email ? 'same email' : null,
+                $phone && $t->phone === $phone ? 'same phone' : null,
+                $staffId !== '' && $t->staff_id === $staffId ? 'same staff ID' : null,
+            ])->filter()->implode(', ') ?: 'similar name',
+            'url' => route('teachers.show', $t),
+        ])->values());
+    }
+
+    /**
+     * Apply the form's teaching assignments: the classes this teacher is class teacher of, and
+     * the subjects they teach.
+     */
+    protected function syncAssignments(Teacher $teacher, Request $request): void
+    {
+        $classIds = array_map('intval', (array) $request->input('class_group_ids', []));
+
+        // Free the classes they no longer lead, then take the ticked ones that have no other class teacher.
+        \App\Models\ClassGroup::where('class_teacher_id', $teacher->id)->whereNotIn('id', $classIds ?: [0])->update(['class_teacher_id' => null]);
+        \App\Models\ClassGroup::whereIn('id', $classIds ?: [0])->whereNull('class_teacher_id')->update(['class_teacher_id' => $teacher->id]);
+
+        $teacher->subjects()->sync(array_map('intval', (array) $request->input('subject_ids', [])));
+    }
+
+    /**
+     * Give a teacher a portal login (role Teacher) with a temporary password.
+     *
+     * @return string the flash message, including the temporary password
+     */
+    protected function makeLogin(Teacher $teacher, PastechSmsService $sms, bool $textIt): string
+    {
+        $temporaryPassword = Str::password(12);
+
+        User::create([
+            'name' => $teacher->name,
+            'email' => $teacher->email,
+            'password' => Hash::make($temporaryPassword),
+            'role' => 'admin',
+            'teacher_id' => $teacher->id,
+            'first_login' => true,
+        ])->assignRole('Teacher');
+
+        $message = "Login created. Temporary password: {$temporaryPassword} (share this with the teacher securely - it will not be shown again).";
+
+        return $message . ' ' . ($textIt
+            ? $this->textTemporaryPassword($sms, $teacher, $temporaryPassword, 'Your account on the school portal has been created.')
+            : 'No SMS was sent.');
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request, PastechSmsService $sms)
     {
         $validator = Validator::make($request->all(), $this->rules());
 
@@ -143,15 +276,26 @@ class TeacherController extends Controller
         }
 
         $data = $request->only(['name', 'email', 'phone', 'staff_id', 'department_id']);
+        $data['phone'] = $this->cleanPhone($data['phone'] ?? null);
+        $data['staff_id'] = ($data['staff_id'] ?? '') !== '' ? $data['staff_id'] : $this->nextStaffId();
 
         if ($request->hasFile('profile_photo')) {
             $data['profile_photo'] = $request->file('profile_photo')->store('lecturer-photos', 'public');
         }
 
-        Teacher::create($data);
+        $teacher = Teacher::create($data);
+        $this->syncAssignments($teacher, $request);
 
-        return redirect()->route('teachers.index')
-            ->with('success', 'Teacher added successfully.');
+        $message = "{$teacher->name} added (staff ID {$teacher->staff_id}).";
+
+        if ($request->boolean('create_login')) {
+            $message .= $teacher->email
+                ? ' ' . $this->makeLogin($teacher, $sms, $request->boolean('send_sms') && (bool) $teacher->phone)
+                : ' No login was created because no email address was given.';
+        }
+
+        return redirect()->route($request->input('after') === 'another' ? 'teachers.create' : 'teachers.show', $request->input('after') === 'another' ? [] : $teacher)
+            ->with('success', $message);
     }
 
     /**
@@ -171,9 +315,7 @@ class TeacherController extends Controller
      */
     public function edit(Teacher $teacher)
     {
-        $departments = Department::orderBy('name')->get();
-
-        return view('teachers.edit', compact('teacher', 'departments'));
+        return view('teachers.edit', $this->formData($teacher) + ['teacher' => $teacher]);
     }
 
     /**
@@ -190,6 +332,11 @@ class TeacherController extends Controller
         }
 
         $data = $request->only(['name', 'email', 'phone', 'staff_id', 'department_id']);
+        $data['phone'] = $this->cleanPhone($data['phone'] ?? null);
+
+        if ($request->has('assignments_submitted')) {
+            $this->syncAssignments($teacher, $request);
+        }
 
         if ($request->hasFile('profile_photo')) {
             if ($teacher->profile_photo) {
@@ -373,6 +520,10 @@ class TeacherController extends Controller
             'staff_id' => ['nullable', 'string', 'max:50', Rule::unique('teachers', 'staff_id')->ignore($ignoreId)],
             'department_id' => 'nullable|exists:departments,id',
             'profile_photo' => 'nullable|image|max:2048',
+            'class_group_ids' => 'nullable|array',
+            'class_group_ids.*' => 'exists:class_groups,id',
+            'subject_ids' => 'nullable|array',
+            'subject_ids.*' => 'exists:subjects,id',
         ];
     }
 }

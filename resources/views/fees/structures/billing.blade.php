@@ -24,6 +24,37 @@
                 </select>
             </form>
 
+            @if($term && $plan && $plan['pupils'] > 0)
+                <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                    <div class="px-6 py-4 border-b flex flex-wrap justify-between items-center gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">What billing would do right now</h3>
+                            <p class="text-xs text-gray-500">{{ $plan['new_items'] }} new bill item(s) worth GH₵ {{ number_format($plan['new_total'], 2) }} across all classes.
+                                @if($plan['no_fees']) {{ $plan['no_fees'] }} pupil(s) are in a class level with no fees set for this term. @endif</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <x-button href="{{ route('fees.bulk-bill', ['semester_id' => $term->id]) }}" variant="secondary" size="sm" icon="fas fa-layer-group">Bill one item to many pupils</x-button>
+                        </div>
+                    </div>
+                    <table class="min-w-full text-sm divide-y divide-gray-100">
+                        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                            <tr><th class="px-6 py-2 text-left">Class</th><th class="px-6 py-2 text-right">Pupils</th><th class="px-6 py-2 text-right">Still to bill</th><th class="px-6 py-2 text-right">New items</th><th class="px-6 py-2 text-right">Amount</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach($plan['rows'] as $row)
+                                <tr>
+                                    <td class="px-6 py-2">{{ $row['class'] }}</td>
+                                    <td class="px-6 py-2 text-right text-gray-600">{{ $row['pupils'] }}</td>
+                                    <td class="px-6 py-2 text-right {{ $row['to_bill'] ? 'font-medium text-orange-600' : 'text-green-600' }}">{{ $row['to_bill'] ?: 'All billed' }}</td>
+                                    <td class="px-6 py-2 text-right text-gray-600">{{ $row['items'] ?: '—' }}</td>
+                                    <td class="px-6 py-2 text-right">{{ $row['amount'] ? number_format($row['amount'], 2) : '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+
             @if($term)
                 <form method="POST" action="{{ route('fees.billing.store') }}" class="bg-white shadow-sm rounded-lg p-6 space-y-6">
                     @csrf

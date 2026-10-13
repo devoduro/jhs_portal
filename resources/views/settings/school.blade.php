@@ -35,7 +35,8 @@
 
                 <div class="bg-white shadow-sm rounded-lg p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-1">Terminal report scores</h3>
-                    <p class="text-sm text-gray-500 mb-4">How the 100 marks per subject are split between continuous assessment (class exercises, tests, projects) and the end-of-term exam. GES basic schools commonly use 50/50; some schools use 30/70 or 40/60.</p>
+                    <p class="text-sm text-gray-500 mb-4">The default split of the 100 marks per subject between continuous assessment (class exercises, tests, projects) and the end-of-term exam. GES basic schools commonly use 50/50; some schools use 30/70 or 40/60.
+                        Want separate columns (e.g. Exercises 10, Class Test 10, Project 10, Exam 70) or a different sheet for a class? <a href="{{ route('assessment-settings.index') }}" class="text-primary-600 underline">Design the score sheets</a>.</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <x-input name="class_score_max" type="number" step="0.5" min="0" max="100" label="Class score out of" :value="old('class_score_max', $values['class_score_max'] ?? 50)" required />
                         <x-input name="exam_score_max" type="number" step="0.5" min="0" max="100" label="Exam score out of" :value="old('exam_score_max', $values['exam_score_max'] ?? 50)" required />

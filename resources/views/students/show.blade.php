@@ -79,6 +79,14 @@
                                 <x-button type="submit" size="sm" icon="fas fa-print">View / Print</x-button>
                             </form>
                             @can('send-sms')
+                                <form method="POST" action="{{ route('parent-notices.send') }}" class="flex gap-2" onsubmit="this.semester_id.value = this.parentElement.querySelector('form select[name=semester_id]').value">
+                                    @csrf
+                                    <input type="hidden" name="semester_id">
+                                    <input type="hidden" name="student_ids[]" value="{{ $student->id }}">
+                                    <input type="hidden" name="kinds[]" value="results">
+                                    <input type="hidden" name="channels[]" value="email">
+                                    <x-button type="submit" size="sm" variant="secondary" icon="fas fa-envelope" :disabled="!$student->parent_email" title="Email the parent these results">Email to parent</x-button>
+                                </form>
                                 <form method="POST" action="{{ route('students.send-grades', $student) }}" class="flex gap-2" onsubmit="this.semester_id.value = this.previousElementSibling.semester_id.value">
                                     @csrf
                                     <input type="hidden" name="semester_id">

@@ -10,6 +10,9 @@
     <x-nav-link href="{{ route('teacher.timetable') }}" icon="fa-calendar-week" :active="request()->routeIs('teacher.timetable*')">
         My Timetable
     </x-nav-link>
+    <x-nav-link href="{{ route('class-lists.index') }}" icon="fa-print" :active="request()->routeIs('class-lists.*')">
+        Class Lists
+    </x-nav-link>
     <x-nav-link href="{{ route('teacher.profile.edit') }}" icon="fa-id-badge" :active="request()->routeIs('teacher.profile.*')">
         My Profile
     </x-nav-link>
@@ -30,6 +33,13 @@
         </x-nav-link>
     @endcan
 @endcan
+@unless($user->teacher_id)
+    @canany(['manage-students', 'view-student-directory', 'manage-classes'])
+        <x-nav-link href="{{ route('class-lists.index') }}" icon="fa-print" :active="request()->routeIs('class-lists.*')">
+            Class Lists
+        </x-nav-link>
+    @endcanany
+@endunless
 @can('manage-classes')
     <x-nav-link href="{{ route('class-groups.index') }}" icon="fa-chalkboard" :active="request()->routeIs('class-groups.*')">
         Classes
@@ -45,13 +55,17 @@
     <x-nav-link href="{{ route('fees.index') }}" icon="fa-cash-register" :active="request()->routeIs('fees.index') || request()->routeIs('fees.show') || request()->routeIs('fees.receipt')">
         Receive Fees
     </x-nav-link>
+    <x-nav-link href="{{ route('fees.collect') }}" icon="fa-table-list" :active="request()->routeIs('fees.collect*') || request()->routeIs('fees.payments.*')">
+        Class Payment Sheet
+    </x-nav-link>
     <x-nav-link href="{{ route('fees.report') }}" icon="fa-chart-pie" :active="request()->routeIs('fees.report*')">
         Collection Report
     </x-nav-link>
     <x-nav-group label="Fee Setup" icon="fa-sliders"
-        :active="request()->routeIs('fee-structures.*') || request()->routeIs('fees.billing') || request()->routeIs('fees.charges.*') || request()->routeIs('fees.arrears.*')">
+        :active="request()->routeIs('fee-structures.*') || request()->routeIs('fees.billing') || request()->routeIs('fees.bulk-bill*') || request()->routeIs('fees.charges.*') || request()->routeIs('fees.arrears.*')">
         <x-nav-sublink href="{{ route('fee-structures.index') }}" :active="request()->routeIs('fee-structures.*')">Fee Schedule</x-nav-sublink>
         <x-nav-sublink href="{{ route('fees.billing') }}" :active="request()->routeIs('fees.billing')">Bill a Term</x-nav-sublink>
+        <x-nav-sublink href="{{ route('fees.bulk-bill') }}" :active="request()->routeIs('fees.bulk-bill*')">Bill an Item / Discount</x-nav-sublink>
         <x-nav-sublink href="{{ route('fees.charges.index') }}" :active="request()->routeIs('fees.charges.*')">Billed Items</x-nav-sublink>
         <x-nav-sublink href="{{ route('fees.arrears.index') }}" :active="request()->routeIs('fees.arrears.*')">Opening Balances</x-nav-sublink>
     </x-nav-group>
@@ -125,6 +139,9 @@
 {{-- ── Parents ────────────────────────────────────────────────────────── --}}
 @can('send-sms')
     <x-nav-heading>Parents</x-nav-heading>
+    <x-nav-link href="{{ route('parent-notices.index') }}" icon="fa-paper-plane" :active="request()->routeIs('parent-notices.*')">
+        Results & Fees to Parents
+    </x-nav-link>
     <x-nav-group label="SMS to Parents" icon="fa-sms" :active="request()->routeIs('sms.*')">
         <x-nav-sublink href="{{ route('sms.index') }}" :active="request()->routeIs('sms.index')">Send SMS</x-nav-sublink>
         <x-nav-sublink href="{{ route('sms.history') }}" :active="request()->routeIs('sms.history*')">Sent Messages</x-nav-sublink>
@@ -137,7 +154,7 @@
 @canany(['manage-settings', 'manage-users', 'manage-roles', 'view-activity-logs'])
     <x-nav-heading>Administration</x-nav-heading>
     @can('manage-settings')
-        <x-nav-link href="{{ route('settings.index') }}" icon="fa-cog" :active="request()->routeIs('settings.*') || request()->routeIs('ca-score-settings.*')">
+        <x-nav-link href="{{ route('settings.index') }}" icon="fa-cog" :active="request()->routeIs('settings.*') || request()->routeIs('assessment-settings.*') || request()->routeIs('ca-score-settings.*')">
             Settings
         </x-nav-link>
     @endcan

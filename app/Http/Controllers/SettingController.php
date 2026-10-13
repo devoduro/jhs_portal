@@ -23,9 +23,17 @@ class SettingController extends Controller
         $currentAcademicYear = AcademicYear::where('is_current', true)->first();
         $currentSemester = Semester::where('is_current', true)->first();
         $institutionName = \App\Models\Setting::get('institution_name');
-        $totalStudents = \App\Models\Student::count();
+        $totalStudents = \App\Models\Student::where('status', 'active')->count();
+        $classCount = \App\Models\ClassGroup::count();
+        $subjectCount = \App\Models\Subject::count();
+
+        $lastBackupTime = collect(glob(storage_path('app/backups/*')) ?: [])->filter('is_file')->map(fn ($f) => filemtime($f))->max();
+        $lastBackup = $lastBackupTime ? \Carbon\Carbon::createFromTimestamp($lastBackupTime) : null;
 
         return view('settings.index', compact(
+            'classCount',
+            'subjectCount',
+            'lastBackup',
             'academicYears',
             'gradeSchemes',
             'currentAcademicYear',
@@ -684,13 +692,15 @@ public function updateInstitution(Request $request)
         // Handle logo upload if present
         if ($request->hasFile('institution_logo')) {
             $logo = $request->file('institution_logo');
-            $path = $logo->store('public/logos');
+            // The public disk (storage/app/public) is what the layout, letterhead and login
+            // screens read the logo from, and what /storage serves.
+            $path = $logo->storeAs('logos', $logo->hashName(), 'public');
             
             // Update or insert logo path in settings
             DB::table('settings')->updateOrInsert(
                 ['key' => 'institution_logo', 'category' => 'institution'],
                 [
-                    'value' => str_replace('public/', '', $path),
+                    'value' => $path,
                     'type' => 'image'
                 ]
             );

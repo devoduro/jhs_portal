@@ -52,6 +52,14 @@ class Result extends Model
     }
     
     /**
+     * Per-column marks when the class level is scored on admin-defined components.
+     */
+    public function componentScores(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ResultComponentScore::class);
+    }
+
+    /**
      * The class the pupil was in when this result was recorded (positions are ranked within it).
      */
     public function classGroup(): BelongsTo

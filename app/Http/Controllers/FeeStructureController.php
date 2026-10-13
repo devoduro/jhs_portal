@@ -154,7 +154,9 @@ class FeeStructureController extends Controller
             : [];
         $categories = array_intersect_key(FeeCategory::options(), array_flip($categoriesInTerm));
 
-        return view('fees.structures.billing', compact('terms', 'term', 'classGroups', 'categories'));
+        $plan = $term ? FeeLedgerService::termPlan($term) : null;
+
+        return view('fees.structures.billing', compact('terms', 'term', 'classGroups', 'categories', 'plan'));
     }
 
     public function bill(Request $request)

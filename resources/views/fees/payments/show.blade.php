@@ -169,6 +169,22 @@
             @endif
         </div>
 
+        @can('send-sms')
+            @if($term)
+                <form method="POST" action="{{ route('parent-notices.send') }}" class="flex flex-wrap items-center gap-4 rounded-md bg-white px-5 py-3 shadow-sm ring-1 ring-gray-100">
+                    @csrf
+                    <input type="hidden" name="semester_id" value="{{ $term->id }}">
+                    <input type="hidden" name="student_ids[]" value="{{ $student->id }}">
+                    <input type="hidden" name="kinds[]" value="fees">
+                    <span class="text-sm font-medium text-gray-700"><i class="fas fa-paper-plane text-[#42a5dc]"></i> Send {{ $term->name }} fee statement to parent</span>
+                    <label class="flex items-center gap-1.5 text-sm text-gray-600"><input type="checkbox" name="channels[]" value="sms" class="rounded border-gray-300" @checked($student->emergency_contact_phone) @disabled(!$student->emergency_contact_phone)> SMS</label>
+                    <label class="flex items-center gap-1.5 text-sm text-gray-600"><input type="checkbox" name="channels[]" value="email" class="rounded border-gray-300" @checked($student->parent_email) @disabled(!$student->parent_email)> Email</label>
+                    @unless($student->emergency_contact_phone || $student->parent_email)<span class="text-xs text-gray-400">No parent phone or email on file.</span>@endunless
+                    <button type="submit" class="ml-auto rounded-md border border-[#42a5dc] px-3 py-1.5 text-sm font-semibold text-[#2c8fc6] hover:bg-[#42a5dc]/10">Send</button>
+                </form>
+            @endif
+        @endcan
+
         <!-- Term bill -->
         <div class="overflow-hidden rounded-md bg-white shadow-sm ring-1 ring-gray-100">
             <div class="flex items-center gap-3 border-b border-gray-100 bg-gradient-to-r from-[#967adc]/10 to-transparent px-5 py-4">

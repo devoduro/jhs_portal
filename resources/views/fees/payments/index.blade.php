@@ -21,7 +21,9 @@
             <span><i class="fas fa-chart-pie"></i> {{ $summary['rate'] }}% of term bills collected</span>
             <span><i class="fas fa-coins"></i> {{ $money($summary['today']) }} collected today</span>
         </x-slot:chips>
-        <a class="primary" href="{{ route('fees.report', ['semester_id' => $term?->id]) }}"><i class="fas fa-chart-pie text-[#42a5dc]"></i> Collection Report</a>
+        <a class="primary" href="{{ route('fees.collect', ['semester_id' => $term?->id, 'class_group_id' => request('class_group_id')]) }}"><i class="fas fa-table-list text-[#42a5dc]"></i> Class Payment Sheet</a>
+        <a href="{{ route('fees.payments.upload') }}"><i class="fas fa-file-arrow-up"></i> Upload Payments</a>
+        <a href="{{ route('fees.report', ['semester_id' => $term?->id]) }}"><i class="fas fa-chart-pie"></i> Collection Report</a>
         <a href="{{ route('fees.export.excel', request()->query()) }}"><i class="fas fa-file-excel"></i> Excel</a>
         <a href="{{ route('fees.export.pdf', request()->query()) }}"><i class="fas fa-file-pdf"></i> PDF</a>
     </x-dashboard-hero>
@@ -102,6 +104,15 @@
                             onclick="const n=document.querySelectorAll('.pupil-box:checked').length; if(!n){alert('Tick the pupils whose parents should get a reminder.'); return false;} return confirm('Send an SMS balance reminder to ' + n + ' parent(s)?')">
                         <i class="fas fa-sms"></i> SMS reminder to ticked
                     </button>
+                    @if($statusCounts['debtor'] > 0)
+                        <button type="submit" name="all_owing" value="1" class="inline-flex items-center gap-2 rounded-md bg-[#da4453] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#c23744]"
+                                onclick="return confirm('Send an SMS balance reminder to every parent in this list who owes fees ({{ $statusCounts['debtor'] }} pupil(s))?')">
+                            <i class="fas fa-bell"></i> Remind everyone owing
+                        </button>
+                        @foreach(request()->only(['search', 'class_group_id', 'level', 'semester_id', 'pupil_status']) as $name => $value)
+                            @if($value !== null && $value !== '')<input type="hidden" name="{{ $name }}" value="{{ $value }}">@endif
+                        @endforeach
+                    @endif
                 @endcan
             </div>
 

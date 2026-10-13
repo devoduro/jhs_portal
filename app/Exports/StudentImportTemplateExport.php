@@ -14,7 +14,7 @@ class StudentImportTemplateExport implements FromArray, WithHeadings, ShouldAuto
 {
     public function headings(): array
     {
-        return ['full_name', 'gender', 'class', 'admission_number', 'date_of_birth', 'parent_name', 'relationship', 'parent_phone', 'address'];
+        return ['full_name', 'gender', 'class', 'admission_number', 'date_of_birth', 'parent_name', 'relationship', 'parent_phone', 'parent_email', 'address'];
     }
 
     public function array(): array

@@ -49,6 +49,24 @@ class SmsReceiptService
         return $this->deliver($student, $message);
     }
 
+    /**
+     * Text the parent a short fee statement for a term: what was billed, paid and is owed.
+     */
+    public function sendStatement(Student $student, \App\Models\Semester $term): bool
+    {
+        $fees = TerminalReportService::feeSummary($student, $term);
+        $school = Setting::get('institution_name', 'the school');
+
+        $message = "Dear Parent, {$student->full_name}'s {$term->name} fees: billed GHS " . number_format($fees['term_bill'], 2)
+            . ', paid GHS ' . number_format($fees['paid'], 2)
+            . ($fees['brought_forward'] > 0.009 ? ', balance b/f GHS ' . number_format($fees['brought_forward'], 2) : '')
+            . '. ' . ($fees['balance'] > 0.009 ? 'Total owing: GHS ' . number_format($fees['balance'], 2) . '.' : 'Fees fully paid.')
+            . ($fees['next_term_fees'] > 0 ? ' Next term fees: GHS ' . number_format($fees['next_term_fees'], 2) . '.' : '')
+            . " Thank you. - {$school}";
+
+        return $this->deliver($student, $message);
+    }
+
     private function deliver(Student $student, string $message): bool
     {
         $phone = $student->emergency_contact_phone ?: $student->phone;

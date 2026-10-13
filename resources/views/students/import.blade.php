@@ -25,7 +25,7 @@
                         <ul class="list-disc pl-5 space-y-1 text-blue-700">
                             <li>Create the classes first (Classes page), then download the template below.</li>
                             <li>One row per pupil. Required columns: <strong>full_name</strong>, <strong>gender</strong> (Male/Female), <strong>class</strong> (exactly as named on the Classes page, e.g. Basic 4A).</li>
-                            <li>Optional: admission_number (leave blank to number automatically), date_of_birth, parent_name, relationship, parent_phone, address.</li>
+                            <li>Optional: admission_number (leave blank to number automatically), date_of_birth, parent_name, relationship, parent_phone, parent_email, address.</li>
                             <li>Re-uploading a row with an existing admission number updates that pupil instead of creating a duplicate.</li>
                         </ul>
                         <div class="mt-4">
