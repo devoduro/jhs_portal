@@ -325,18 +325,20 @@ class StudentAuthController extends Controller
             'emergency_contact_name' => ['required', 'string', 'max:255'],
             'emergency_contact_phone' => ['required', 'string', 'max:20'],
             'emergency_contact_relationship' => ['nullable', 'string', 'max:50'],
-            'date_of_birth' => ['nullable', 'date'],
+            'date_of_birth' => ['nullable', 'date', 'before:today'],
         ]);
 
         $student->update([
             'email' => $request->email,
-            'phone' => $request->phone,
+            'phone' => \App\Support\Phone::clean($request->phone),
             'address' => $request->address,
-            'date_of_birth' => $request->date_of_birth,
+            // The date of birth is the pupil's starting password and part of the school record, so it
+            // can be filled in when missing but not changed from here (the office edits it).
+            'date_of_birth' => $student->date_of_birth ?? $request->date_of_birth,
             'hometown' => $request->hometown,
             'gps_address' => $request->gps_address,
             'emergency_contact_name' => $request->emergency_contact_name,
-            'emergency_contact_phone' => $request->emergency_contact_phone,
+            'emergency_contact_phone' => \App\Support\Phone::clean($request->emergency_contact_phone),
             'emergency_contact_relationship' => $request->emergency_contact_relationship,
         ]);
 

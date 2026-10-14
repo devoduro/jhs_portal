@@ -79,7 +79,8 @@ class StudentPasswordResetController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        $student = Student::where('email', $request->email)->first();
+        // Pupils usually have no email of their own, so the parent's email on file works too.
+        $student = Student::where('email', $request->email)->orWhere('parent_email', $request->email)->first();
 
         if (! $student) {
             return back()->withErrors(['email' => 'No student account found with that email address.'])->withInput();
@@ -94,7 +95,7 @@ class StudentPasswordResetController extends Controller
         $resetUrl = $this->issueResetToken($user);
 
         try {
-            Mail::to($student->email)->send(new StudentPasswordResetMail($student, $resetUrl));
+            Mail::to($request->email)->send(new StudentPasswordResetMail($student, $resetUrl));
         } catch (\Throwable $e) {
             report($e);
             return back()->with('error', 'We could not send the email. Please try again shortly or use SMS instead.')->withInput();
