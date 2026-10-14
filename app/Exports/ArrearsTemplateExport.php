@@ -19,9 +19,8 @@ class ArrearsTemplateExport implements FromArray, WithHeadings
     }
 
     /**
-     * Column headings expected by ArrearsImport. reference_number is the student's 7-digit
-     * bank reference number (see Student Reference Numbers), not their index number - it's
-     * what the bank uses to identify the student, so it's what bank-sourced debtor lists use.
+     * Column headings expected by ArrearsImport: the pupil's admission number, the academic year the
+     * balance is owed from, the amount (negative = the school owes the pupil) and optional notes.
      */
     public function headings(): array
     {

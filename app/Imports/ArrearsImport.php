@@ -96,7 +96,8 @@ class ArrearsImport implements ToCollection, WithHeadingRow, WithValidation, Ski
     public function rules(): array
     {
         return [
-            'reference_number' => 'required',
+            // The pupil column is checked in collection(): it may be admission_number, index_number
+            // or (older sheets) reference_number, so no single heading can be demanded here.
             'academic_year' => 'required',
             // Negative amounts are allowed (school owes the student, e.g. an overpayment);
             // only zero is meaningless here.

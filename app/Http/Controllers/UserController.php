@@ -166,6 +166,12 @@ class UserController extends Controller
                 ->withInput();
         }
 
+        if ($request->input('system_role') === 'Super Admin' && !Auth::user()->hasRole('Super Admin')) {
+            return redirect()->route('users.create')
+                ->withErrors(['system_role' => 'Only a Super Admin can create another Super Admin.'])
+                ->withInput();
+        }
+
         $userData = [
             'name' => $request->input('name'),
             'email' => $request->input('email'),
@@ -243,6 +249,27 @@ class UserController extends Controller
                 ->withInput();
         }
 
+        // Super Admin is the one role that can lock everybody out or take over the system.
+        $touchesSuperAdmin = $user->hasRole('Super Admin') || $request->input('system_role') === 'Super Admin';
+        if ($touchesSuperAdmin && !Auth::user()->hasRole('Super Admin')) {
+            return redirect()->route('users.edit', $user->id)
+                ->withErrors(['system_role' => 'Only a Super Admin can change a Super Admin account or grant that role.'])
+                ->withInput();
+        }
+
+        if ($user->hasRole('Super Admin') && $request->input('system_role') !== 'Super Admin' && $this->isLastSuperAdmin($user)) {
+            return redirect()->route('users.edit', $user->id)
+                ->withErrors(['system_role' => 'This is the only Super Admin. Make someone else a Super Admin before changing this role.'])
+                ->withInput();
+        }
+
+        // A pupil's login cannot be turned into a staff account (the User model forbids it).
+        if ($request->filled('role') && $user->role === User::ROLE_STUDENT && $request->input('role') !== User::ROLE_STUDENT) {
+            return redirect()->route('users.edit', $user->id)
+                ->withErrors(['role' => 'A pupil login cannot be changed into a staff account. Create a separate staff account instead.'])
+                ->withInput();
+        }
+
         $userData = [
             'name' => $request->input('name'),
             'email' => $request->input('email'),
@@ -283,9 +310,22 @@ class UserController extends Controller
                 ->with('error', 'You cannot delete your own account.');
         }
 
+        if ($user->hasRole('Super Admin') && (!Auth::user()->hasRole('Super Admin') || $this->isLastSuperAdmin($user))) {
+            return redirect()->route('users.index')
+                ->with('error', 'A Super Admin account can only be deleted by another Super Admin, and the last one cannot be deleted.');
+        }
+
         $user->delete();
 
         return redirect()->route('users.index')
             ->with('success', 'User deleted successfully.');
+    }
+
+    /**
+     * Whether this user is the only account holding the Super Admin role.
+     */
+    protected function isLastSuperAdmin(User $user): bool
+    {
+        return !User::role('Super Admin')->where('id', '!=', $user->id)->exists();
     }
 }

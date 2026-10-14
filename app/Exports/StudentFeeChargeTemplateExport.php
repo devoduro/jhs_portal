@@ -19,8 +19,8 @@ class StudentFeeChargeTemplateExport implements FromArray, WithHeadings
     }
 
     /**
-     * Column headings expected by StudentFeeChargeImport. Category must be one of:
-     * tuition, graduation, resit.
+     * Column headings expected by StudentFeeChargeImport. Category is the fee item's code
+     * (e.g. tuition, feeding, transport - see Fee Schedule).
      */
     public function headings(): array
     {

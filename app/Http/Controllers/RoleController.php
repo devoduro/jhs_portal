@@ -80,6 +80,14 @@ class RoleController extends Controller
                 ->with('error', 'The Super Admin role always has every permission and cannot be edited.');
         }
 
+        // The built-in roles are looked up by name in the code (e.g. "Teacher" decides who is limited to
+        // their own classes), so they can have their permissions changed but not be renamed.
+        if (array_key_exists($role->name, RolesAndPermissionsSeeder::DEFAULT_ROLES) && $request->input('name') !== $role->name) {
+            return redirect()->route('roles.edit', $role)
+                ->withErrors(['name' => "\"{$role->name}\" is a built-in role and cannot be renamed. You can change what it is allowed to do."])
+                ->withInput();
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|unique:roles,name,' . $role->id,
             'permissions' => 'array',
@@ -107,6 +115,11 @@ class RoleController extends Controller
         if ($role->name === self::PROTECTED_ROLE) {
             return redirect()->route('roles.index')
                 ->with('error', 'The Super Admin role cannot be deleted.');
+        }
+
+        if (array_key_exists($role->name, RolesAndPermissionsSeeder::DEFAULT_ROLES)) {
+            return redirect()->route('roles.index')
+                ->with('error', "\"{$role->name}\" is a built-in role and cannot be deleted.");
         }
 
         if ($role->users()->count() > 0) {
