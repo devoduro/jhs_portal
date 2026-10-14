@@ -39,7 +39,6 @@ class ClassListImport implements ToCollection, WithHeadingRow, WithValidation, S
         foreach ($rows as $row) {
             $indexNumber = trim((string) ($row['index_number'] ?? ''));
             $className = trim((string) ($row['class_name'] ?? ''));
-            $level = trim((string) ($row['level'] ?? ''));
 
             if ($indexNumber === '' || $className === '') {
                 $this->skipped++;

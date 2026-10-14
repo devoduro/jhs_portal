@@ -175,7 +175,7 @@ class TimetableController extends Controller
     public function create()
     {
         $classGroups = ClassGroup::orderBy('name')->get();
-        $subjects = Subject::with(['teachers', 'programmes'])->orderBy('code')->get();
+        $subjects = Subject::with(['teachers'])->orderBy('code')->get();
         $teachers = Teacher::orderBy('name')->get();
         $venues = Venue::orderBy('name')->get();
         $semesters = Semester::orderBy('academic_year_id', 'desc')->orderBy('semester_number')->get();
@@ -190,7 +190,7 @@ class TimetableController extends Controller
     {
         $validator = Validator::make($request->all(), $this->rules());
         $this->applyVirtualScheduleCheck($validator, $request);
-        $this->applyProgrammeMatchCheck($validator, $request);
+        $this->applyLevelMatchCheck($validator, $request);
 
         if ($validator->fails()) {
             return redirect()->route('timetable.create')
@@ -222,7 +222,7 @@ class TimetableController extends Controller
     public function edit(TimetableEntry $timetable)
     {
         $classGroups = ClassGroup::orderBy('name')->get();
-        $subjects = Subject::with(['teachers', 'programmes'])->orderBy('code')->get();
+        $subjects = Subject::with(['teachers'])->orderBy('code')->get();
         $teachers = Teacher::orderBy('name')->get();
         $venues = Venue::orderBy('name')->get();
         $semesters = Semester::orderBy('academic_year_id', 'desc')->orderBy('semester_number')->get();
@@ -244,7 +244,7 @@ class TimetableController extends Controller
     {
         $validator = Validator::make($request->all(), $this->rules());
         $this->applyVirtualScheduleCheck($validator, $request);
-        $this->applyProgrammeMatchCheck($validator, $request);
+        $this->applyLevelMatchCheck($validator, $request);
 
         if ($validator->fails()) {
             return redirect()->route('timetable.edit', $timetable)
@@ -320,12 +320,10 @@ class TimetableController extends Controller
     }
 
     /**
-     * A class group belongs to exactly one programme, so the subject being timetabled
-     * for it must actually be offered on that programme (core subjects are attached to
-     * every programme; electives only to their own track) - otherwise, e.g., a Visual
-     * Arts elective could silently end up on a General Science class's timetable.
+     * A lesson's subject must be taught at the class's level - a Basic 4 subject cannot be put
+     * on a JHS 1 class's timetable.
      */
-    protected function applyProgrammeMatchCheck($validator, Request $request): void
+    protected function applyLevelMatchCheck($validator, Request $request): void
     {
         $validator->after(function ($validator) use ($request) {
             if (!$request->filled('class_group_id') || !$request->filled('subject_id')) {
@@ -335,16 +333,10 @@ class TimetableController extends Controller
             $classGroup = ClassGroup::find($request->class_group_id);
             $subject = Subject::find($request->subject_id);
 
-            if (!$classGroup || !$subject) {
-                return;
-            }
-
-            $offered = $subject->programmes()->where('programmes.id', $classGroup->programme_id)->exists();
-
-            if (!$offered) {
+            if ($classGroup && $subject && (int) $subject->level !== (int) $classGroup->level) {
                 $validator->errors()->add(
                     'subject_id',
-                    "This subject isn't offered on {$classGroup->programme->name}, which {$classGroup->name} belongs to."
+                    "{$subject->title} is a " . \App\Support\FormLabel::label($subject->level) . " subject, but {$classGroup->name} is a " . \App\Support\FormLabel::label($classGroup->level) . ' class.'
                 );
             }
         });

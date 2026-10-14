@@ -41,36 +41,7 @@ class StudentController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Student::with('classGroup');
-
-        if ($request->filled('search')) {
-            $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('full_name', 'like', "%{$searchTerm}%")
-                    ->orWhere('index_number', 'like', "%{$searchTerm}%")
-                    ->orWhere('emergency_contact_name', 'like', "%{$searchTerm}%")
-                    ->orWhere('emergency_contact_phone', 'like', "%{$searchTerm}%")
-                    ->orWhere('phone', 'like', "%{$searchTerm}%");
-            });
-        }
-
-        if ($request->filled('class_group_id')) {
-            $query->where('class_group_id', $request->class_group_id);
-        }
-
-        if ($request->boolean('unplaced')) {
-            $query->whereNull('class_group_id');
-        }
-
-        if ($request->filled('gender')) {
-            $query->where('gender', $request->gender);
-        }
-
-        if ($request->filled('level')) {
-            $query->where('level', $request->level);
-        }
-
-        $query->where('status', $request->input('status', 'active'));
+        $query = Student::with('classGroup')->matching($request);
 
         $students = $query->orderBy('level')->orderBy('full_name')->paginate(25)->withQueryString();
         $classGroups = $this->classGroupOptions();
@@ -442,7 +413,14 @@ class StudentController extends Controller
     public function destroy(string $id)
     {
         $student = Student::findOrFail($id);
-        
+
+        // A pupil with fee or score history is part of the school's records; deleting them would
+        // wipe payments and results. They are marked withdrawn / completed instead.
+        if ($student->payments()->exists() || $student->feeCharges()->exists() || $student->arrears()->exists() || $student->results()->exists()) {
+            return redirect()->route('students.show', $student)
+                ->with('error', "{$student->full_name} has fee or score records, so they cannot be deleted. Edit the pupil and set their status to Withdrawn / Transferred instead.");
+        }
+
         // Delete profile photo if exists
         if ($student->profile_photo) {
             Storage::disk('public')->delete($student->profile_photo);
@@ -511,6 +489,24 @@ class StudentController extends Controller
     }
     
     /**
+     * A pupil's starting portal password: date of birth as YYYYMMDD, or the admission number
+     * when no date of birth has been recorded (it is optional for pupils).
+     */
+    protected function defaultPupilPassword(Student $student): string
+    {
+        return $student->date_of_birth ? $student->date_of_birth->format('Ymd') : (string) $student->index_number;
+    }
+
+    /**
+     * The email the portal login is created under: the pupil's own address if they have one,
+     * otherwise one made from the admission number (which contains slashes) so it is a valid address.
+     */
+    protected function portalEmail(Student $student): string
+    {
+        return $student->email ?: strtolower(preg_replace('/[^A-Za-z0-9]+/', '.', $student->index_number)) . '@pupil.local';
+    }
+
+    /**
      * Create a user account for a student.
      */
     public function createUserAccount(string $id)
@@ -523,23 +519,21 @@ class StudentController extends Controller
                 ->with('warning', 'Student already has a user account.');
         }
         
-        // Format date of birth as YYYYMMDD for default password
-        $defaultPassword = date('Ymd', strtotime($student->date_of_birth));
-        
+        $defaultPassword = $this->defaultPupilPassword($student);
+
         try {
-            // Create user account
-            $user = User::create([
+            User::create([
                 'name' => $student->full_name,
-                'email' => $student->email ?? $student->index_number . '@st.uew.edu.gh',
+                'email' => $this->portalEmail($student),
                 'password' => Hash::make($defaultPassword),
                 'role' => 'student',
                 'index_number' => $student->index_number,
                 'student_id' => $student->id,
                 'first_login' => true
             ]);
-            
+
             return redirect()->route('students.show', $id)
-                ->with('success', 'User account created successfully. Default password is the student\'s is password.');
+                ->with('success', "Portal login created. Sign in with admission number {$student->index_number} and password {$defaultPassword} - the pupil is asked to change it at first login.");
         } catch (\Exception $e) {
             return redirect()->route('students.show', $id)
                 ->with('error', 'Failed to create user account. Error: ' . $e->getMessage());
@@ -554,18 +548,15 @@ class StudentController extends Controller
         $created = 0;
         $errors = [];
         
-        $students = Student::whereDoesntHave('user')->get();
-        
+        // Pupils still in school only - graduated and withdrawn pupils do not get new logins.
+        $students = Student::where('status', 'active')->whereDoesntHave('user')->get();
+
         foreach ($students as $student) {
             try {
-                // Format date of birth as YYYYMMDD for default password
-                $defaultPassword = "password";
-                
-                // Create user account
                 User::create([
                     'name' => $student->full_name,
-                    'email' => $student->email ?? $student->index_number . '@st.uew.edu.gh',
-                    'password' => Hash::make($defaultPassword),
+                    'email' => $this->portalEmail($student),
+                    'password' => Hash::make($this->defaultPupilPassword($student)),
                     'role' => 'student',
                     'index_number' => $student->index_number,
                     'student_id' => $student->id,
@@ -579,7 +570,7 @@ class StudentController extends Controller
         }
         
         if ($created > 0) {
-            $message = "Created {$created} user accounts. Default password is each student's date of birth (YYYYMMDD).";
+            $message = "Created {$created} pupil logins. The starting password is the pupil's date of birth (YYYYMMDD), or their admission number if no date of birth is recorded; each pupil changes it at first login.";
             if (!empty($errors)) {
                 $message .= "\n\nErrors:\n" . implode("\n", $errors);
             }

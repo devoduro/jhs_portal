@@ -31,6 +31,12 @@ class Setting extends Model
      */
     public static function get(string $key, ?string $default = null): ?string
     {
-        return static::where('key', $key)->value('value') ?? $default;
+        // A key can exist under more than one category (the school name is on both the Institution
+        // Profile and System Settings screens). The Institution Profile is the one admins edit for
+        // the school's identity, so it wins; otherwise a stale seeded placeholder could shadow it.
+        return static::where('key', $key)
+            ->orderByRaw("CASE category WHEN 'institution' THEN 0 WHEN 'academic' THEN 1 WHEN 'system' THEN 2 ELSE 3 END")
+            ->orderBy('id')
+            ->value('value') ?? $default;
     }
 }

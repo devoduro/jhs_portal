@@ -39,7 +39,7 @@ class TeacherImport implements ToCollection, WithHeadingRow, WithValidation, Ski
         foreach ($rows as $row) {
             $name = trim((string) ($row['name'] ?? ''));
             $email = trim((string) ($row['email'] ?? '')) ?: null;
-            $phone = trim((string) ($row['phone'] ?? '')) ?: null;
+            $phone = \App\Support\Phone::clean((string) ($row['phone'] ?? ''));
             $staffId = trim((string) ($row['staff_id'] ?? '')) ?: null;
             $departmentName = trim((string) ($row['department'] ?? ''));
 

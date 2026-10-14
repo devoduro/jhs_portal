@@ -183,6 +183,7 @@ class SettingController extends Controller
             'grades.*.remark' => 'nullable|string|max:100',
             'section' => 'nullable|in:preschool,primary,jhs',
         ]);
+        $this->checkGradeBands($validator, $request);
 
         if ($validator->fails()) {
             return redirect()->route('settings.grade-schemes.create')
@@ -298,6 +299,7 @@ class SettingController extends Controller
             'grades.*.remark' => 'nullable|string|max:100',
             'section' => 'nullable|in:preschool,primary,jhs',
         ]);
+        $this->checkGradeBands($validator, $request);
 
         if ($validator->fails()) {
             return redirect()->route('settings.grade-schemes.edit', $id)
@@ -350,11 +352,44 @@ class SettingController extends Controller
     }
     
     /**
+     * A grading scale must give every possible score a grade: one band must start at 0 and no
+     * two bands may share a starting score (the highest band a score reaches is the one used).
+     */
+    protected function checkGradeBands($validator, Request $request): void
+    {
+        $validator->after(function ($validator) use ($request) {
+            $mins = collect((array) $request->input('grades', []))->pluck('min_score')->filter(fn ($v) => $v !== null && $v !== '')->map(fn ($v) => (float) $v);
+
+            if ($mins->isEmpty()) {
+                return;
+            }
+            if ($mins->min() > 0) {
+                $validator->errors()->add('grades', 'One grade must start at 0, so that every score gets a grade.');
+            }
+            if ($mins->duplicates()->isNotEmpty()) {
+                $validator->errors()->add('grades', 'Two grades start at the same score. Each grade needs its own starting score.');
+            }
+        });
+    }
+
+    /**
      * Delete an academic year.
      */
     public function destroyAcademicYear(string $id)
     {
         $academicYear = AcademicYear::findOrFail($id);
+
+        if ($academicYear->is_current) {
+            return redirect()->route('settings.index')
+                ->with('error', 'This is the current academic year. Make another year current before deleting it.');
+        }
+
+        $termIds = $academicYear->semesters()->pluck('id');
+        if (\App\Models\StudentFeeCharge::whereIn('semester_id', $termIds)->exists() || \App\Models\StudentPayment::whereIn('semester_id', $termIds)->exists()
+            || \App\Models\TermReport::whereIn('semester_id', $termIds)->exists()) {
+            return redirect()->route('settings.index')
+                ->with('error', 'Cannot delete an academic year that has fees billed, payments received or report remarks entered.');
+        }
         
         // Check if there are any results associated with this academic year
         if ($academicYear->results()->count() > 0) {
@@ -374,6 +409,12 @@ class SettingController extends Controller
     public function destroyGradeScheme(string $id)
     {
         $gradeScheme = GradeScheme::findOrFail($id);
+
+        if ($gradeScheme->is_default) {
+            return redirect()->route('settings.grade-schemes')
+                ->with('error', 'This is the default grade scheme. Make another scheme the default before deleting it.');
+        }
+
         $gradeScheme->delete();
 
         return redirect()->route('settings.index')
@@ -401,48 +442,43 @@ class SettingController extends Controller
      */
     public function backupDatabase(Request $request)
     {
-        \Log::info('Backup request details:', [
-            'method' => $request->method(),
-            'url' => $request->url(),
-            'path' => $request->path(),
-            'ajax' => $request->ajax(),
-            'headers' => $request->headers->all()
-        ]);
         try {
-            // Generate a timestamp for the backup file
-            $timestamp = now()->format('Y-m-d_H-i-s');
-            $filename = "backup_{$timestamp}.sql";
-            
-            // Get database configuration
-            $host = config('database.connections.mysql.host');
-            $database = config('database.connections.mysql.database');
-            $username = config('database.connections.mysql.username');
-            $password = config('database.connections.mysql.password');
-            
-            // Create backup command
-            $command = "mysqldump --user={$username} --password={$password} --host={$host} {$database} > storage/app/backups/{$filename}";
-            
-            // Create backups directory if it doesn't exist
-            if (!Storage::exists('backups')) {
-                Storage::makeDirectory('backups');
+            $backupDir = storage_path('app/backups');
+
+            if (!is_dir($backupDir) && !mkdir($backupDir, 0755, true) && !is_dir($backupDir)) {
+                throw new \Exception('The backups folder could not be created.');
             }
-            
-            // Execute the command
+
+            $filename = 'backup_' . now()->format('Y-m-d_H-i-s') . '.sql';
+            $target = $backupDir . DIRECTORY_SEPARATOR . $filename;
+
+            $config = config('database.connections.mysql');
+            $dump = env('MYSQLDUMP_PATH', 'mysqldump');
+
+            // Every part is escaped; the password is only passed when there is one.
+            $command = escapeshellarg($dump)
+                . ' --user=' . escapeshellarg((string) $config['username'])
+                . ($config['password'] !== null && $config['password'] !== '' ? ' --password=' . escapeshellarg((string) $config['password']) : '')
+                . ' --host=' . escapeshellarg((string) $config['host'])
+                . ' --port=' . escapeshellarg((string) ($config['port'] ?? 3306))
+                . ' --single-transaction ' . escapeshellarg((string) $config['database'])
+                . ' > ' . escapeshellarg($target) . ' 2>&1';
+
             exec($command, $output, $returnVar);
-            
-            if ($returnVar !== 0) {
-                throw new \Exception('Database backup failed.');
+
+            if ($returnVar !== 0 || !is_file($target) || filesize($target) < 100) {
+                @unlink($target);
+                throw new \Exception('mysqldump did not run - check that it is installed, or set MYSQLDUMP_PATH in .env.');
             }
-            
-            return redirect()->route('settings.index')
-                ->with('success', 'Database backup created successfully.');
-                
+
+            return redirect()->route('settings.backup')
+                ->with('success', "Database backup {$filename} created.");
         } catch (\Exception $e) {
-            return redirect()->route('settings.index')
+            return redirect()->route('settings.backup')
                 ->with('error', 'Database backup failed: ' . $e->getMessage());
         }
     }
-    
+
     /**
      * List database backups.
      */
@@ -525,7 +561,9 @@ class SettingController extends Controller
     public function system()
     {
         // Get system settings from DB or config
-        $settings = DB::table('settings')->where('category', 'system')->get();
+        // The school's name and address live in the Institution Profile; show those, not a seeded placeholder.
+        $settings = DB::table('settings')->whereIn('category', ['system', 'institution'])
+            ->orderByRaw("category = 'institution' DESC")->get();
         
         return view('settings.system', compact('settings'));
     }
@@ -569,8 +607,11 @@ class SettingController extends Controller
         ];
         
         foreach ($fields as $field) {
+            // Name and address are the same facts as on the Institution Profile - keep one copy.
+            $category = in_array($field, ['institution_name', 'institution_address'], true) ? 'institution' : 'system';
+
             DB::table('settings')->updateOrInsert(
-                ['key' => $field, 'category' => 'system'],
+                ['key' => $field, 'category' => $category],
                 ['value' => $request->input($field), 'updated_at' => now()]
             );
         }
@@ -840,6 +881,15 @@ public function updateInstitution(Request $request)
             
             // Set this one as current
             DB::statement('UPDATE academic_years SET is_current = 1 WHERE id = ?', [$academicYear->id]);
+
+            // The current term must belong to the current year: keep this year's current term if it
+            // has one, otherwise start it on its first term.
+            $terms = Semester::where('academic_year_id', $academicYear->id)->orderBy('semester_number')->get();
+            $keep = $terms->firstWhere('is_current', true) ?? $terms->first();
+            DB::statement('UPDATE semesters SET is_current = 0');
+            if ($keep) {
+                DB::statement('UPDATE semesters SET is_current = 1 WHERE id = ?', [$keep->id]);
+            }
             
             DB::commit();
             

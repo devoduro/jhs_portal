@@ -52,6 +52,28 @@ class Student extends Model
     ];
     
     /**
+     * The pupil list filters (search, class, unplaced, gender, level, status) shared by the
+     * Pupils screen and its Excel / PDF exports, so an export always matches what is on screen.
+     */
+    public function scopeMatching($query, \Illuminate\Http\Request $request)
+    {
+        return $query
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = $request->search;
+                $q->where(fn ($w) => $w->where('full_name', 'like', "%{$term}%")
+                    ->orWhere('index_number', 'like', "%{$term}%")
+                    ->orWhere('emergency_contact_name', 'like', "%{$term}%")
+                    ->orWhere('emergency_contact_phone', 'like', "%{$term}%")
+                    ->orWhere('phone', 'like', "%{$term}%"));
+            })
+            ->when($request->filled('class_group_id'), fn ($q) => $q->where('class_group_id', $request->class_group_id))
+            ->when($request->boolean('unplaced'), fn ($q) => $q->whereNull('class_group_id'))
+            ->when($request->filled('gender'), fn ($q) => $q->where('gender', $request->gender))
+            ->when($request->filled('level'), fn ($q) => $q->where('level', $request->level))
+            ->where('status', $request->input('status', 'active'));
+    }
+
+    /**
      * Get the programme that the student belongs to.
      */
     public function programme(): BelongsTo

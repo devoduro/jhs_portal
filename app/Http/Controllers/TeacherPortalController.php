@@ -45,6 +45,7 @@ class TeacherPortalController extends Controller
         }
 
         $data = $request->only(['email', 'phone']);
+        $data['phone'] = \App\Support\Phone::clean($data['phone'] ?? null);
 
         if ($request->hasFile('profile_photo')) {
             if ($teacher->profile_photo) {

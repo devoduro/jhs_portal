@@ -33,7 +33,7 @@
                                 <label class="block text-sm font-medium text-gray-700">Class <span class="text-red-500">*</span></label>
                                 <select id="class_group_id" name="class_group_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md" required>
                                     @foreach($classGroups as $classGroup)
-                                        <option value="{{ $classGroup->id }}" data-level="{{ $classGroup->level }}" data-programme-id="{{ $classGroup->programme_id }}" {{ old('class_group_id', $entry->class_group_id) == $classGroup->id ? 'selected' : '' }}>{{ $classGroup->name }} ({{ $classGroup->programme->name ?? '' }})</option>
+                                        <option value="{{ $classGroup->id }}" data-level="{{ $classGroup->level }}" {{ old('class_group_id', $entry->class_group_id) == $classGroup->id ? 'selected' : '' }}>{{ $classGroup->name }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -42,10 +42,10 @@
                                 <label class="block text-sm font-medium text-gray-700">Subject <span class="text-red-500">*</span></label>
                                 <select id="subject_id" name="subject_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md" required>
                                     @foreach($subjects as $subject)
-                                        <option value="{{ $subject->id }}" data-semester-id="{{ $subject->semester_id }}" data-level="{{ $subject->level }}" data-programme-ids="{{ $subject->programmes->pluck('id')->implode(',') }}" data-teacher-ids="{{ $subject->teachers->pluck('id')->implode(',') }}" {{ old('subject_id', $entry->subject_id) == $subject->id ? 'selected' : '' }}>{{ $subject->code }} - {{ $subject->title }}</option>
+                                        <option value="{{ $subject->id }}" data-level="{{ $subject->level }}" data-teacher-ids="{{ $subject->teachers->pluck('id')->implode(',') }}" {{ old('subject_id', $entry->subject_id) == $subject->id ? 'selected' : '' }}>{{ $subject->code }} - {{ $subject->title }}</option>
                                     @endforeach
                                 </select>
-                                <p class="mt-1 text-xs text-gray-500">Filtered to subjects in the selected semester, the selected class's form, and the class's programme.</p>
+                                <p class="mt-1 text-xs text-gray-500">Filtered to the subjects taught at the selected class's level.</p>
                             </div>
 
                             <div>
@@ -127,18 +127,13 @@
         const teacherSelect = document.getElementById('teacher_id');
 
         function filterSubjectsBySemester() {
-            const semesterId = semesterSelect.value;
             const selectedClass = classSelect.options[classSelect.selectedIndex];
             const level = selectedClass?.dataset.level || '';
-            const programmeId = selectedClass?.dataset.programmeId || '';
-
+            
             Array.from(subjectSelect.options).forEach(option => {
                 if (!option.value) return; // keep the placeholder always visible
-                const matchesSemester = !semesterId || option.dataset.semesterId === semesterId;
                 const matchesLevel = !level || option.dataset.level === level;
-                const programmeIds = (option.dataset.programmeIds || '').split(',').filter(Boolean);
-                const matchesProgramme = !programmeId || programmeIds.includes(programmeId);
-                option.hidden = !(matchesSemester && matchesLevel && matchesProgramme);
+                option.hidden = !matchesLevel;
             });
 
             // If the currently selected subject no longer matches, clear it (and the teacher list with it).
@@ -180,12 +175,10 @@
         // Apply filtering immediately so the pre-filled subject/teacher for this entry stay
         // correctly visible/selected, without wiping out its existing values.
         (function initialFilter() {
-            const semesterId = semesterSelect.value;
             const selectedClass = classSelect.options[classSelect.selectedIndex];
             const level = selectedClass?.dataset.level || '';
             Array.from(subjectSelect.options).forEach(option => {
                 if (!option.value) return;
-                const matchesSemester = !semesterId || option.dataset.semesterId === semesterId;
                 const matchesLevel = !level || option.dataset.level === level;
                 option.hidden = !(matchesSemester && matchesLevel);
             });

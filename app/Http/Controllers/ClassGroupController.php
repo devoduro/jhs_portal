@@ -152,8 +152,9 @@ class ClassGroupController extends Controller
             ->whereNotIn('id', $selectedIds)
             ->update(['class_group_id' => null]);
 
-        // Assign the selected students to this class group.
+        // Assign the selected students to this class group (pupils still in school only).
         Student::whereIn('id', $selectedIds)
+            ->where('status', 'active')
             ->update(['class_group_id' => $classGroup->id, 'level' => $classGroup->level]);
 
         return redirect()->route('class-groups.index')

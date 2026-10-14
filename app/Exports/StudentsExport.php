@@ -3,10 +3,14 @@
 namespace App\Exports;
 
 use App\Models\Student;
+use App\Support\FormLabel;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 
+/**
+ * The pupil list as shown on the Pupils screen (same filters), one row per pupil.
+ */
 class StudentsExport implements FromCollection, WithHeadings, WithMapping
 {
     protected $request;
@@ -18,44 +22,22 @@ class StudentsExport implements FromCollection, WithHeadings, WithMapping
 
     public function collection()
     {
-        $query = Student::with('programme');
-        
-        // Apply filters if they exist
-        if ($this->request->has('search') && $this->request->search) {
-            $searchTerm = $this->request->search;
-            $query->where(function($q) use ($searchTerm) {
-                $q->where('full_name', 'like', "%{$searchTerm}%")
-                  ->orWhere('index_number', 'like', "%{$searchTerm}%")
-                  ->orWhere('email', 'like', "%{$searchTerm}%")
-                  ->orWhere('phone', 'like', "%{$searchTerm}%");
-            });
-        }
-        
-        if ($this->request->has('programme_id') && $this->request->programme_id) {
-            $query->where('programme_id', $this->request->programme_id);
-        }
-        
-        if ($this->request->has('gender') && $this->request->gender) {
-            $query->where('gender', $this->request->gender);
-        }
-        
-        return $query->get();
+        return Student::with('classGroup')->matching($this->request)->orderBy('level')->orderBy('full_name')->get();
     }
 
     public function headings(): array
     {
         return [
-            'Index Number',
+            'Admission Number',
             'Full Name',
-            'Email',
-            'Phone',
             'Gender',
             'Date of Birth',
-            'Programme',
-            'CGPA',
-            'Emergency Contact',
-            'Emergency Phone',
-            'Address'
+            'Class',
+            'Parent / Guardian',
+            'Parent Phone',
+            'Parent Email',
+            'Address',
+            'Status',
         ];
     }
 
@@ -64,15 +46,14 @@ class StudentsExport implements FromCollection, WithHeadings, WithMapping
         return [
             $student->index_number,
             $student->full_name,
-            $student->email,
-            $student->phone,
             $student->gender,
-            $student->date_of_birth,
-            $student->programme->name ?? 'N/A',
-            number_format($student->calculateCGPA(), 2),
+            $student->date_of_birth?->format('d/m/Y'),
+            $student->classGroup->name ?? FormLabel::label($student->level),
             $student->emergency_contact_name,
             $student->emergency_contact_phone,
-            $student->address
+            $student->parent_email,
+            $student->address,
+            ucfirst((string) $student->status),
         ];
     }
 }

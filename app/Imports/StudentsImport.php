@@ -96,11 +96,9 @@ class StudentsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     /**
      * Excel drops the leading zero of Ghanaian numbers stored as numbers (241234567).
      */
-    private function phone($value): string
+    private function phone($value): ?string
     {
-        $phone = preg_replace('/[^\d+]/', '', (string) $value);
-
-        return strlen($phone) === 9 ? '0' . $phone : $phone;
+        return \App\Support\Phone::clean((string) $value);
     }
 
     private function date($value): ?string

@@ -366,6 +366,19 @@ class TeacherController extends Controller
                 ->with('error', 'Cannot delete a teacher who is assigned to one or more timetable entries.');
         }
 
+        if ($teacher->classesInCharge()->exists()) {
+            return redirect()->route('teachers.index')
+                ->with('error', 'Cannot delete a teacher who is the class teacher of a class. Give the class another class teacher first.');
+        }
+
+        // Their portal login goes with them - otherwise it would stay behind as a staff account
+        // that is no longer linked to anyone.
+        $teacher->user?->delete();
+
+        if ($teacher->profile_photo) {
+            Storage::disk('public')->delete($teacher->profile_photo);
+        }
+
         $teacher->delete();
 
         return redirect()->route('teachers.index')

@@ -185,22 +185,31 @@ class SemesterController extends Controller
     {
         $semester = Semester::findOrFail($id);
 
-        // Check if there are any subjects associated with this semester
-        if ($semester->subjects()->count() > 0) {
+        if ($semester->is_current) {
             return redirect()->route('semesters.index')
-                ->with('error', 'Cannot delete semester with associated subjects.');
+                ->with('error', 'This is the current term. Make another term current before deleting it.');
         }
-        
-        // Check if there are any results associated with this semester
-        if ($semester->results()->count() > 0) {
+
+        // A term with scores, bills, payments or report remarks is part of the school's records.
+        if ($semester->results()->exists()) {
             return redirect()->route('semesters.index')
-                ->with('error', 'Cannot delete semester with associated results.');
+                ->with('error', 'Cannot delete a term that has scores recorded.');
         }
-        
+
+        if (\App\Models\StudentFeeCharge::where('semester_id', $semester->id)->exists() || \App\Models\StudentPayment::where('semester_id', $semester->id)->exists()) {
+            return redirect()->route('semesters.index')
+                ->with('error', 'Cannot delete a term that has fees billed or payments received.');
+        }
+
+        if ($semester->termReports()->exists()) {
+            return redirect()->route('semesters.index')
+                ->with('error', 'Cannot delete a term that has attendance and remarks entered.');
+        }
+
         $semester->delete();
-        
+
         return redirect()->route('semesters.index')
-            ->with('success', 'Semester deleted successfully.');
+            ->with('success', 'Term deleted.');
     }
     
     /**
