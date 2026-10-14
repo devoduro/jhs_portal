@@ -231,12 +231,20 @@ class Student extends Model
     }
 
     /**
-     * Balance brought forward into a term - the outstanding balance excluding that term's
-     * own bill and payments (i.e. what was still owed from earlier terms).
+     * Balance brought forward into a term: what was still owed from before it - arrears carried in,
+     * plus the bills and payments of terms that started earlier. Later terms are not part of it
+     * (a term billed in advance must not show as "brought forward" on an earlier term's report).
+     * Bills or payments not tied to any term count as earlier.
      */
     public function balanceBroughtForward(Semester $term): float
     {
-        return $this->outstandingBalance() - ($this->billedAmount(null, $term) - $this->paidAmount(null, $term));
+        $earlier = Semester::where('start_date', '<', $term->start_date)->pluck('id');
+
+        $before = fn ($relation) => $this->{$relation}()
+            ->where(fn ($q) => $q->whereNull('semester_id')->orWhereIn('semester_id', $earlier))
+            ->sum('amount');
+
+        return (float) $this->arrears()->sum('amount') + (float) $before('feeCharges') - (float) $before('payments');
     }
 
     /**

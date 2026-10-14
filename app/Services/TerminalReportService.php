@@ -322,7 +322,7 @@ class TerminalReportService
     {
         $termBill = $student->billedAmount(null, $term);
         $termPaid = $student->paidAmount(null, $term);
-        $balance = $student->outstandingBalance();
+        $broughtForward = $student->balanceBroughtForward($term);
         $next = $term->nextTerm();
         $nextTermFees = $next && $student->level
             ? (float) \App\Models\FeeStructure::where('semester_id', $next->id)
@@ -331,10 +331,11 @@ class TerminalReportService
             : 0.0;
 
         return [
-            'brought_forward' => $balance - ($termBill - $termPaid),
+            'brought_forward' => $broughtForward,
             'term_bill' => $termBill,
             'paid' => $termPaid,
-            'balance' => $balance,
+            // The position at the end of this term - what was owed before it, plus its bill, less its payments.
+            'balance' => $broughtForward + $termBill - $termPaid,
             'next_term_fees' => $nextTermFees,
         ];
     }

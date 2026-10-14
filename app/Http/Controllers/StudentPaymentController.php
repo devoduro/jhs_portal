@@ -115,29 +115,17 @@ class StudentPaymentController extends Controller
         $students = $query->orderBy('level')->orderBy('full_name')->get();
         $ids = $students->pluck('id');
 
-        $sum = fn ($model, $column = null, $value = null) => $model::whereIn('student_id', $ids)
-            ->when($column, fn ($q) => $q->where($column, $value))
-            ->selectRaw('student_id, SUM(amount) as total')
-            ->groupBy('student_id')
-            ->pluck('total', 'student_id');
+        $positions = FeeLedgerService::positions($ids, $term);
 
-        $allCharges = $sum(StudentFeeCharge::class);
-        $allPayments = $sum(StudentPayment::class);
-        $allArrears = $sum(StudentArrear::class);
-        $termCharges = $term ? $sum(StudentFeeCharge::class, 'semester_id', $term->id) : collect();
-        $termPayments = $term ? $sum(StudentPayment::class, 'semester_id', $term->id) : collect();
-
-        $rows = $students->map(function (Student $student) use ($allCharges, $allPayments, $allArrears, $termCharges, $termPayments) {
-            $id = $student->id;
-            $balance = (float) ($allCharges[$id] ?? 0) + (float) ($allArrears[$id] ?? 0) - (float) ($allPayments[$id] ?? 0);
-            $termBill = (float) ($termCharges[$id] ?? 0);
-            $termPaid = (float) ($termPayments[$id] ?? 0);
+        $rows = $students->map(function (Student $student) use ($positions) {
+            $position = $positions[$student->id];
+            $balance = $position['balance'];
 
             return [
                 'student' => $student,
-                'brought_forward' => $balance - ($termBill - $termPaid),
-                'term_bill' => $termBill,
-                'term_paid' => $termPaid,
+                'brought_forward' => $position['brought_forward'],
+                'term_bill' => $position['term_bill'],
+                'term_paid' => $position['term_paid'],
                 'balance' => $balance,
                 'status' => $balance > 0.009 ? 'debtor' : ($balance < -0.009 ? 'creditor' : 'settled'),
             ];
@@ -183,7 +171,7 @@ class StudentPaymentController extends Controller
 
         $ledger = FeeLedgerService::ledgerFor($student);
         $balanceDue = $ledger[0]['balance'] ?? 0.0;
-        $broughtForward = $balanceDue - ($termBill - $termPaid);
+        $broughtForward = $term ? $student->balanceBroughtForward($term) : 0.0;
 
         // Fee items set for the pupil's class this term that haven't been billed to them yet.
         $unbilledItems = $term

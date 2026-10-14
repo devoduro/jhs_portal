@@ -97,7 +97,7 @@ class FeeLedgerService
      * what is owed overall now, and the given term's bill and payments.
      *
      * @param  Collection<int, int>  $studentIds
-     * @return array<int, array{balance: float, term_bill: float, term_paid: float}>
+     * @return array<int, array{balance: float, brought_forward: float, term_bill: float, term_paid: float}>
      */
     public static function positions(Collection $studentIds, ?Semester $term = null): array
     {
@@ -113,10 +113,23 @@ class FeeLedgerService
         $termCharges = $term ? $sum(\App\Models\StudentFeeCharge::class, $term->id) : collect();
         $termPayments = $term ? $sum(\App\Models\StudentPayment::class, $term->id) : collect();
 
+        // What was still owed from before the term: arrears plus the bills and payments of earlier terms
+        // (Student::balanceBroughtForward, worked out for many pupils at once).
+        $beforeCharges = $beforePayments = collect();
+        if ($term) {
+            $earlier = Semester::where('start_date', '<', $term->start_date)->pluck('id');
+            $before = fn ($model) => $model::whereIn('student_id', $studentIds)
+                ->where(fn ($q) => $q->whereNull('semester_id')->orWhereIn('semester_id', $earlier))
+                ->selectRaw('student_id, SUM(amount) as total')->groupBy('student_id')->pluck('total', 'student_id');
+            $beforeCharges = $before(\App\Models\StudentFeeCharge::class);
+            $beforePayments = $before(\App\Models\StudentPayment::class);
+        }
+
         $positions = [];
         foreach ($studentIds as $id) {
             $positions[$id] = [
                 'balance' => (float) ($charges[$id] ?? 0) + (float) ($arrears[$id] ?? 0) - (float) ($payments[$id] ?? 0),
+                'brought_forward' => (float) ($arrears[$id] ?? 0) + (float) ($beforeCharges[$id] ?? 0) - (float) ($beforePayments[$id] ?? 0),
                 'term_bill' => (float) ($termCharges[$id] ?? 0),
                 'term_paid' => (float) ($termPayments[$id] ?? 0),
             ];

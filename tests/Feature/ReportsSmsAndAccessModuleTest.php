@@ -72,16 +72,17 @@ class ReportsSmsAndAccessModuleTest extends TestCase
         $this->get(route('sms.parent-notifications', ['status' => 'failed']))->assertViewHas('logs', fn ($l) => $l->count() === 1);
         $this->get(route('sms.parent-notifications', ['type' => 'fees', 'class_group_id' => $this->basic4->id]))->assertOk()->assertSee('Fee receipt');
 
+        $before = SmsTemplate::count();
         $this->get(route('sms.templates.index'))->assertOk();
         $this->post(route('sms.templates.store'), ['name' => '', 'message' => 'x'])->assertSessionHasErrors('name');
         $this->post(route('sms.templates.store'), ['name' => 'Reminder', 'message' => str_repeat('x', 700)])->assertSessionHasErrors('message');
         $this->post(route('sms.templates.store'), ['name' => 'Reminder', 'message' => 'Dear {parent}, {pupil} owes {balance}.'])->assertRedirect(route('sms.templates.index'));
 
-        $template = SmsTemplate::first();
+        $template = SmsTemplate::where('name', 'Reminder')->first();
         $this->put(route('sms.templates.update', $template), ['name' => 'Reminder 2', 'message' => 'Updated'])->assertRedirect();
         $this->assertSame('Reminder 2', $template->fresh()->name);
         $this->delete(route('sms.templates.destroy', $template))->assertRedirect();
-        $this->assertSame(0, SmsTemplate::count());
+        $this->assertSame($before, SmsTemplate::count());
     }
 
     public function test_gateway_reports_success_failure_and_outages_and_cleans_numbers(): void
@@ -100,9 +101,17 @@ class ReportsSmsAndAccessModuleTest extends TestCase
         $this->assertSame('1005', $sms->sendSms('0241234567', 'hi')['code']);
         $this->assertFalse($sms->sendSms('0241234567', 'hi')['success']);
 
-        Http::fake(['sms.test/send*' => Http::response('1000')]);
-        $sms->sendSms('+233 24 123 4567', 'hello');
-        Http::assertSent(fn ($request) => $request['to'] === '0241234567' && $request['msg'] === 'hello' && $request['sender_id'] === 'SCH');
+    }
+
+    public function test_gateway_request_carries_the_key_sender_and_a_cleaned_number(): void
+    {
+        config(['services.pastech_sms' => ['api_key' => 'k', 'sender_id' => 'SCH', 'endpoint' => 'https://sms.test/send', 'balance_endpoint' => 'https://sms.test/balance']]);
+        Http::fake(['sms.test/*' => Http::response('1000')]);
+
+        (new PastechSmsService())->sendSms('+233 24 123 4567', 'hello');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'to=0241234567') && str_contains($request->url(), 'msg=hello')
+            && str_contains($request->url(), 'sender_id=SCH') && str_contains($request->url(), 'key=k'));
     }
 
     // ----------------------------------------------------------------- access
