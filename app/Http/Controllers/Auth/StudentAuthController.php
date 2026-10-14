@@ -58,6 +58,18 @@ class StudentAuthController extends Controller
                 ->withInput();
         }
 
+        // Five wrong passwords for one admission number from one place lock it out for five minutes.
+        $throttleKey = 'pupil-login|' . strtolower((string) $request->index_number) . '|' . $request->ip();
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $minutes = ceil(\Illuminate\Support\Facades\RateLimiter::availableIn($throttleKey) / 60);
+
+            return redirect()->route('student.login')
+                ->withErrors(['index_number' => "Too many failed sign-in attempts. Please try again in {$minutes} minute(s)."])
+                ->withInput();
+        }
+
+        \Illuminate\Support\Facades\RateLimiter::hit($throttleKey, 300);   // every try counts; a successful sign-in clears it below
+
         // Try to find student by index_number
         $student = Student::where('index_number', $request->index_number)->first();
         
@@ -86,7 +98,8 @@ class StudentAuthController extends Controller
         // Attempt login with user credentials
         if (Auth::attempt(['email' => $user->email, 'password' => $request->password, 'role' => User::ROLE_STUDENT])) {
             $request->session()->regenerate();
-            
+            \Illuminate\Support\Facades\RateLimiter::clear($throttleKey);
+
             // Log the successful login
             app(ActivityLogger::class)->log('login', 'Student logged in successfully');
             

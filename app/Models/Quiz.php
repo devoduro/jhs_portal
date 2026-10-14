@@ -91,15 +91,13 @@ class Quiz extends Model
     }
 
     /**
-     * Students eligible to take this quiz - same "enrolled in this subject" logic as
-     * Subject::students() (active, at this quiz's level, in a programme the subject is
-     * offered on), narrowed further to one class if the quiz targets a specific class.
+     * Pupils eligible to take this quiz: active pupils at the quiz subject's class level, narrowed
+     * to one class if the quiz targets a specific class.
      */
     public function eligibleStudents()
     {
         $query = Student::where('status', 'active')
-            ->where('level', $this->subject->level)
-            ->whereIn('programme_id', $this->subject->programmes()->pluck('programmes.id'));
+            ->where('level', $this->subject->level);
 
         if ($this->class_group_id) {
             $query->where('class_group_id', $this->class_group_id);

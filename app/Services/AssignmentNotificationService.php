@@ -17,14 +17,18 @@ class AssignmentNotificationService
 {
     public function notify(Assignment $assignment): array
     {
-        $students = $assignment->eligibleStudents()->whereNotNull('email')->where('email', '!=', '')->get();
+        // Pupils rarely have their own address, so the parent's email on file is used when there is none.
+        $students = $assignment->eligibleStudents()
+            ->where(fn ($q) => $q->where(fn ($w) => $w->whereNotNull('email')->where('email', '!=', ''))
+                ->orWhere(fn ($w) => $w->whereNotNull('parent_email')->where('parent_email', '!=', '')))
+            ->get();
 
         $sent = 0;
         $failed = 0;
 
         foreach ($students as $student) {
             try {
-                Mail::to($student->email)->send(new AssignmentPostedMail($assignment, $student));
+                Mail::to($student->email ?: $student->parent_email)->send(new AssignmentPostedMail($assignment, $student));
                 $sent++;
             } catch (\Throwable $e) {
                 $failed++;

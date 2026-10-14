@@ -300,14 +300,11 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('venues', \App\Http\Controllers\VenueController::class)->except(['show']);
     });
 
-    // Continuous Assessment
+    // Continuous assessment is now part of the class score sheet (Enter Scores), with the columns
+    // designed under Settings > Score Sheets. The old college-style screens redirect there.
     Route::middleware('permission:manage-continuous-assessment')->group(function () {
-        Route::get('/continuous-assessment', [\App\Http\Controllers\ContinuousAssessmentController::class, 'index'])->name('continuous-assessment.index');
-        Route::get('/continuous-assessment/export/excel', [\App\Http\Controllers\ContinuousAssessmentController::class, 'exportExcel'])->name('continuous-assessment.export.excel');
-        Route::get('/continuous-assessment/export/pdf', [\App\Http\Controllers\ContinuousAssessmentController::class, 'exportPdf'])->name('continuous-assessment.export.pdf');
-        Route::get('/continuous-assessment/{subject}', [\App\Http\Controllers\ContinuousAssessmentController::class, 'show'])->name('continuous-assessment.show');
-        Route::post('/continuous-assessment/{subject}', [\App\Http\Controllers\ContinuousAssessmentController::class, 'store'])->name('continuous-assessment.store');
-        Route::get('/continuous-assessment/{subject}/export', [\App\Http\Controllers\ContinuousAssessmentController::class, 'exportRoster'])->name('continuous-assessment.roster.export');
+        Route::redirect('/continuous-assessment', '/scores')->name('continuous-assessment.index');
+        Route::redirect('/continuous-assessment/{any}', '/scores')->where('any', '.*');
     });
 
     // Quizzes - a teacher only sees/manages quizzes for subjects they're assigned to teach
@@ -354,7 +351,7 @@ Route::middleware(['auth'])->group(function () {
         // closure - closures can't survive route:cache (var_export() has no valid
         // __set_state() form for a Closure), which crashed production with "Call to undefined
         // method Closure::__set_state()" as soon as this route file was cached.
-        Route::group(['middleware' => 'student', 'prefix' => 'student', 'as' => 'student.'], function () {
+        Route::group(['middleware' => ['student', 'first.login'], 'prefix' => 'student', 'as' => 'student.'], function () {
             Route::get('/dashboard', [\App\Http\Controllers\Auth\StudentAuthController::class, 'dashboard'])->name('dashboard');
             Route::get('/report-card', [\App\Http\Controllers\ReportCardController::class, 'studentShow'])->name('report-card');
 

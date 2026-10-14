@@ -69,6 +69,8 @@ class AssignmentController extends Controller
             'notify_students' => 'nullable|boolean',
         ]);
 
+        $this->checkClassLevels($validator, $request);
+
         if ($validator->fails()) {
             return redirect()->route('assignments.create')->withErrors($validator)->withInput();
         }
@@ -98,6 +100,27 @@ class AssignmentController extends Controller
         }
 
         return redirect()->route('assignments.show', $assignment)->with('success', $message);
+    }
+
+    /**
+     * Every class an assignment is set for must be at the level the subject is taught at.
+     */
+    protected function checkClassLevels($validator, Request $request): void
+    {
+        $validator->after(function ($validator) use ($request) {
+            if (!$request->filled('subject_id') || !is_array($request->class_group_ids)) {
+                return;
+            }
+
+            $subject = Subject::find($request->subject_id);
+            $wrong = $subject
+                ? ClassGroup::whereIn('id', $request->class_group_ids)->where('level', '!=', $subject->level)->pluck('name')
+                : collect();
+
+            if ($wrong->isNotEmpty()) {
+                $validator->errors()->add('class_group_ids', "{$subject->title} is a " . \App\Support\FormLabel::label($subject->level) . ' subject and is not taught in: ' . $wrong->implode(', ') . '.');
+            }
+        });
     }
 
     public function show(Assignment $assignment)
@@ -148,6 +171,8 @@ class AssignmentController extends Controller
             'max_score' => 'nullable|numeric|min:0',
             'is_active' => 'nullable|boolean',
         ]);
+
+        $this->checkClassLevels($validator, $request);
 
         if ($validator->fails()) {
             return redirect()->route('assignments.edit', $assignment)->withErrors($validator)->withInput();

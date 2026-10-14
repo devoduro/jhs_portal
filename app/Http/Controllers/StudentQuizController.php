@@ -24,7 +24,6 @@ class StudentQuizController extends Controller
     protected function eligibleSubjectIds($student): array
     {
         return Subject::where('level', $student->level)
-            ->whereHas('programmes', fn ($q) => $q->where('programmes.id', $student->programme_id))
             ->pluck('id')
             ->all();
     }
@@ -248,7 +247,7 @@ class StudentQuizController extends Controller
     {
         abort_unless(
             in_array($quiz->subject_id, $this->eligibleSubjectIds($student), true)
-                && ($quiz->class_group_id === null || $quiz->class_group_id === $student->class_group_id),
+                && ($quiz->class_group_id === null || (int) $quiz->class_group_id === (int) $student->class_group_id),
             403
         );
     }

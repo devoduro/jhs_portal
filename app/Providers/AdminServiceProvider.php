@@ -23,5 +23,6 @@ class AdminServiceProvider extends ServiceProvider
     {
         $this->app['router']->aliasMiddleware('admin', AdminMiddleware::class);
         $this->app['router']->aliasMiddleware('student', StudentMiddleware::class);
+        $this->app['router']->aliasMiddleware('first.login', \App\Http\Middleware\FirstLoginPasswordChange::class);
     }
 }

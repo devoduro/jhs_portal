@@ -16,7 +16,7 @@ class FirstLoginPasswordChange
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (Auth::check() && Auth::user()->first_login && !$request->is('student/change-password*')) {
+        if (Auth::check() && Auth::user()->first_login && !$request->is('student/change-password*', 'student/update-password*', 'student/logout')) {
             return redirect()->route('student.change-password');
         }
 

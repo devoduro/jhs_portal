@@ -122,7 +122,7 @@
                         <!-- Date of Birth -->
                         <div>
                             <label for="date_of_birth" class="block text-sm font-medium text-gray-700 mb-2">Date of Birth</label>
-                            <input type="date" name="date_of_birth" id="date_of_birth" value="{{ old('date_of_birth', Auth::user()->student->date_of_birth ? Auth::user()->student->date_of_birth->format('Y-m-d') : '') }}" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500">
+                            <input type="date" name="date_of_birth" id="date_of_birth" value="{{ old('date_of_birth', Auth::user()->student->date_of_birth ? Auth::user()->student->date_of_birth->format('Y-m-d') : '') }}" @if(Auth::user()->student->date_of_birth) readonly title="Ask the school office to change your date of birth" @endif class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 read-only:bg-gray-50 read-only:text-gray-500">
                             @error('date_of_birth')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror

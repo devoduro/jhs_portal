@@ -9,7 +9,7 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
                 <div class="p-6 bg-white border-b border-gray-200">
-                    <p class="text-sm text-gray-500 mb-4">Every automatic SMS sent to a student's emergency contact - exeat notices and campus check-in alerts. Bulk campaigns (sent to the student's own number) are tracked separately under Sent Messages.</p>
+                    <p class="text-sm text-gray-500 mb-4">Every automatic SMS sent to a pupil's parent or guardian - terminal report links, fee receipts and balance reminders. Messages composed on the Send SMS page are listed separately under Sent Messages.</p>
 
                     <form method="GET" action="{{ route('sms.parent-notifications') }}" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
                         <div>

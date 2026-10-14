@@ -136,6 +136,8 @@ class LoginController extends Controller
      */
     protected function sendLoginResponse(Request $request)
     {
+        \Illuminate\Support\Facades\RateLimiter::clear($this->throttleKey($request));
+
         $request->session()->regenerate();
         
         // Set last activity timestamp
@@ -170,7 +172,16 @@ class LoginController extends Controller
      */
     protected function hasTooManyLoginAttempts(Request $request)
     {
-        return false; // Implement throttling if needed
+        return \Illuminate\Support\Facades\RateLimiter::tooManyAttempts($this->throttleKey($request), 5);
+    }
+
+    /**
+     * Failed sign-ins are counted per email address and IP: five wrong passwords lock that
+     * combination out for five minutes, so a password cannot be guessed by trying many.
+     */
+    protected function throttleKey(Request $request): string
+    {
+        return 'staff-login|' . strtolower((string) $request->input('email')) . '|' . $request->ip();
     }
     
     /**
@@ -181,7 +192,7 @@ class LoginController extends Controller
      */
     protected function incrementLoginAttempts(Request $request)
     {
-        // Implement if using throttling
+        \Illuminate\Support\Facades\RateLimiter::hit($this->throttleKey($request), 300);
     }
     
     /**
@@ -192,8 +203,11 @@ class LoginController extends Controller
      */
     protected function sendLockoutResponse(Request $request)
     {
-        // Implement if using throttling
-        return back();
+        $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($this->throttleKey($request));
+
+        throw ValidationException::withMessages([
+            'email' => ["Too many failed sign-in attempts. Please try again in " . ceil($seconds / 60) . " minute(s)."],
+        ]);
     }
     
     /**

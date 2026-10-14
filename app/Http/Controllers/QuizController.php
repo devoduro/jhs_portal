@@ -73,6 +73,8 @@ class QuizController extends Controller
             'end_at' => 'nullable|date|after:start_at',
         ]);
 
+        $this->checkClassLevel($validator, $request);
+
         if ($validator->fails()) {
             return redirect()->route('quizzes.create')->withErrors($validator)->withInput();
         }
@@ -87,6 +89,25 @@ class QuizController extends Controller
         $quiz = Quiz::create($data);
 
         return redirect()->route('quizzes.show', $quiz)->with('success', 'Quiz created. Now add some questions.');
+    }
+
+    /**
+     * A quiz aimed at one class must be for a subject taught at that class's level.
+     */
+    protected function checkClassLevel($validator, Request $request): void
+    {
+        $validator->after(function ($validator) use ($request) {
+            if (!$request->filled('class_group_id') || !$request->filled('subject_id')) {
+                return;
+            }
+
+            $class = ClassGroup::find($request->class_group_id);
+            $subject = Subject::find($request->subject_id);
+
+            if ($class && $subject && (int) $class->level !== (int) $subject->level) {
+                $validator->errors()->add('class_group_id', "{$subject->title} is not taught in {$class->name} (it is a " . \App\Support\FormLabel::label($subject->level) . ' subject).');
+            }
+        });
     }
 
     public function show(Quiz $quiz)
@@ -141,6 +162,8 @@ class QuizController extends Controller
             'start_at' => 'nullable|date',
             'end_at' => 'nullable|date|after:start_at',
         ]);
+
+        $this->checkClassLevel($validator, $request);
 
         if ($validator->fails()) {
             return redirect()->route('quizzes.edit', $quiz)->withErrors($validator)->withInput();
