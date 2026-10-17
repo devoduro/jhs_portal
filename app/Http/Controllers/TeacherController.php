@@ -244,7 +244,7 @@ class TeacherController extends Controller
      */
     protected function makeLogin(Teacher $teacher, PastechSmsService $sms, bool $textIt): string
     {
-        $temporaryPassword = Str::password(12);
+        $temporaryPassword = \App\Support\TemporaryPassword::make();
 
         User::create([
             'name' => $teacher->name,
@@ -401,7 +401,7 @@ class TeacherController extends Controller
                 ->with('error', 'This teacher has no email address on file. Add one before creating a login.');
         }
 
-        $temporaryPassword = Str::password(12);
+        $temporaryPassword = \App\Support\TemporaryPassword::make();
 
         try {
             User::create([
@@ -433,7 +433,7 @@ class TeacherController extends Controller
                 ->with('error', 'This teacher has no login account yet. Create one first.');
         }
 
-        $temporaryPassword = Str::password(12);
+        $temporaryPassword = \App\Support\TemporaryPassword::make();
 
         $teacher->user->update([
             'password' => Hash::make($temporaryPassword),

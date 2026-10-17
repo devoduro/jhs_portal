@@ -52,6 +52,13 @@
     <!-- Custom Styles -->
     <style>
         [x-cloak] { display: none !important; }
+
+        /* Tailwind's CDN build has no forms plugin, so text boxes, selects and text areas would have
+           no border at all unless each one asks for it. Give every field a 1px border by default;
+           utilities such as border-0 or border-gray-300 still win because this rule is deliberately low-specificity (but still beats Tailwind's border-width: 0 reset). */
+        body :where(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]):not([type=submit]):not([type=button]), select, textarea) {
+            border-width: 1px;
+        }
         
         .gradient-bg {
             background: linear-gradient(135deg, #0ea5e9 0%, #075985 100%);

@@ -127,7 +127,7 @@ class ReportsSmsAndAccessModuleTest extends TestCase
         $this->get(route('password.change'))->assertOk();                                   // the way out stays open
 
         $this->put(route('password.change.update'), ['current_password' => 'wrong', 'password' => 'Brand#New99x', 'password_confirmation' => 'Brand#New99x'])->assertSessionHasErrors('current_password');
-        $this->put(route('password.change.update'), ['current_password' => 'Temp#Pass1', 'password' => 'weakpass', 'password_confirmation' => 'weakpass'])->assertSessionHasErrors('password');
+        $this->put(route('password.change.update'), ['current_password' => 'Temp#Pass1', 'password' => 'short1', 'password_confirmation' => 'short1'])->assertSessionHasErrors('password');
         $this->put(route('password.change.update'), ['current_password' => 'Temp#Pass1', 'password' => 'Brand#New99x', 'password_confirmation' => 'Brand#New99x'])->assertRedirect(route('dashboard'));
 
         $user->refresh();

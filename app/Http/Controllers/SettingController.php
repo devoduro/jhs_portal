@@ -27,7 +27,7 @@ class SettingController extends Controller
         $classCount = \App\Models\ClassGroup::count();
         $subjectCount = \App\Models\Subject::count();
 
-        $lastBackupTime = collect(glob(storage_path('app/backups/*')) ?: [])->filter('is_file')->map(fn ($f) => filemtime($f))->max();
+        $lastBackupTime = collect(glob(storage_path('app/backups/*')) ?: [])->filter(fn ($f) => is_file($f))->map(fn ($f) => filemtime($f))->max();
         $lastBackup = $lastBackupTime ? \Carbon\Carbon::createFromTimestamp($lastBackupTime) : null;
 
         return view('settings.index', compact(

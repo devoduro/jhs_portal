@@ -40,7 +40,7 @@ class AddTeacherTest extends TestCase
         $this->post(route('teachers.store'), [
             'name' => 'Mr. Kojo Badu', 'email' => 'kojo@example.test', 'phone' => '+233 24 555 1212',
             'class_group_ids' => [$this->jhs1->id], 'subject_ids' => [$subject->id], 'create_login' => 1, 'send_sms' => 1,
-        ])->assertRedirect()->assertSessionHas('success', fn ($m) => str_contains($m, 'Temporary password') && str_contains($m, 'TCH001'));
+        ])->assertRedirect()->assertSessionHas('success', fn ($m) => preg_match('/Temporary password: \d{6} /', $m) && str_contains($m, 'TCH001'));
 
         $teacher = Teacher::where('email', 'kojo@example.test')->first();
         $this->assertSame('0245551212', $teacher->phone);

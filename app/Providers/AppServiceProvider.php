@@ -15,7 +15,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Everything that asks for the SMS service gets whichever gateway SMS_PROVIDER names
+        // (SpesoSmsService extends PastechSmsService, so existing type-hints keep working).
+        $this->app->bind(
+            \App\Services\PastechSmsService::class,
+            fn () => config('services.sms_provider') === 'speso'
+                ? new \App\Services\SpesoSmsService()
+                : new \App\Services\PastechSmsService()
+        );
     }
 
     /**

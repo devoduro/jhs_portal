@@ -33,6 +33,15 @@ return [
         'sender_id' => env('MNOTIFY_SENDER_ID', 'PCG - PMCB'),
     ],
 
+    // Which gateway sends SMS: 'speso' or 'pastech'.
+    'sms_provider' => env('SMS_PROVIDER', 'pastech'),
+
+    'speso_sms' => [
+        'api_key'   => env('SPESO_API_KEY'),
+        'sender_id' => env('SPESO_SMS_SENDER_ID', env('PASTECH_SMS_SENDER_ID', 'SCHOOL')),
+        'base_url'  => env('SPESO_BASE_URL', 'https://business.speso.co/api/v1'),
+    ],
+
     'pastech_sms' => [
         'api_key'         => env('PASTECH_SMS_API_KEY'),
         'sender_id'       => env('PASTECH_SMS_SENDER_ID', 'SCHOOL'),
